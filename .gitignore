@@ -79,4 +79,4 @@ dist
 .DS_Store
 
 # Git
-.gitignor
+.gitignore
