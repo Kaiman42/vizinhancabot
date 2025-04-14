@@ -1,0 +1,76 @@
+const { Events } = require('discord.js');
+
+// Bot and role IDs
+const DISBOARD_BOT_ID = '302050872383242240';
+const BUMP_ROLE_ID = '1357740740058419391';
+
+// Two hours in milliseconds
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+
+module.exports = {
+  name: Events.MessageCreate,
+  async execute(message, client) {
+    // Get bump channel ID from database
+    const guildId = message.guild.id;
+    
+    // Find the channel config in the database for this guild
+    const channelConfig = await client.db.collection('ignis.channelConfigs').findOne({ guildId });
+    
+    if (!channelConfig) return;
+    
+    // Find the bump channel in the database config
+    const bumpChannel = channelConfig.categories
+      .flatMap(category => category.channels)
+      .find(channel => channel.name === 'bump');
+    
+    if (!bumpChannel || message.channel.id !== bumpChannel.id || message.author.id !== DISBOARD_BOT_ID) {
+      return;
+    }
+
+    // Check if the message contains "Bump done"
+    if (message.content.includes('Bump done') || 
+        (message.embeds.length > 0 && message.embeds[0].description?.includes('Bump done'))) {
+      
+      console.log('Bump detectado! Registrando para notificar em 2 horas.');
+      
+      try {
+        // Calculate when the bump reminder should be sent
+        const now = new Date();
+        const reminderTime = new Date(now.getTime() + TWO_HOURS_MS);
+        
+        // Store the reminder in the MongoDB
+        const remindersCollection = client.db.collection('reminders');
+        
+        const bumpReminder = {
+          type: 'bump',
+          scheduledFor: reminderTime,
+          channelId: bumpChannel.id,
+          guildId: guildId,
+          conteudo: `<@&${BUMP_ROLE_ID}> É hora de dar um novo bump! Use \`/bump\` para promover o servidor.`
+        };
+        
+        const result = await remindersCollection.insertOne(bumpReminder);
+        console.log(`Bump reminder stored in database with ID: ${result.insertedId}`);
+        
+        // Set timeout to send the reminder
+        setTimeout(async () => {
+          try {
+            const channel = await client.channels.fetch(bumpChannel.id);
+            
+            // Send a plain text message without an embed
+            await channel.send(bumpReminder.conteudo);
+            
+            // Remove the reminder from the database
+            await remindersCollection.deleteOne({ _id: result.insertedId });
+            
+            console.log('Bump reminder sent successfully and removed from database.');
+          } catch (error) {
+            console.error('Error sending bump reminder:', error);
+          }
+        }, TWO_HOURS_MS);
+      } catch (error) {
+        console.error('Error storing bump reminder in database:', error);
+      }
+    }
+  },
+};
