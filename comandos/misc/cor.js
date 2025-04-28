@@ -1,36 +1,31 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
-const { getCollection } = require('../../configuracoes/database');
+const { getCollection } = require('../../configuracoes/mongodb');
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('custom-cor')
+        .setName('cor')
         .setDescription('Exibe as cores disponíveis para personalização.'),
     
     async execute(interaction) {
         try {
             await interaction.deferReply();
             
-            // Busca as cores do banco de dados
-            const coresCollection = await getCollection('coresNivel');
+            const coresCollection = await getCollection('configuracoes');
             const coresDoc = await coresCollection.findOne({ _id: 'cores' });
             
             if (!coresDoc || !coresDoc.roles) {
                 return interaction.editReply('Nenhuma cor disponível no momento.');
             }
             
-            // Verificar os cargos atuais do usuário
             const member = await interaction.guild.members.fetch(interaction.user.id);
             const cargosUsuario = member.roles.cache.map(role => role.id);
             
-            // Buscar os cargos de nível do banco de dados
             const cargosNivelCollection = await getCollection('cargosNivel');
-            // Buscar o documento correto 
             const cargosNivelDoc = await cargosNivelCollection.findOne();
             
-            // Mapear relação entre níveis e cargos
             const cargosNivelMap = new Map();
             
-            if (cargosNivelDoc && cargosNivelDoc.cargos && Array.isArray(cargosNivelDoc.cargos)) {
+            if (cargosNivelDoc?.cargos?.length) {
                 cargosNivelDoc.cargos.forEach(cargo => {
                     if (cargo.nivel && cargo.id) {
                         cargosNivelMap.set(cargo.nivel, cargo.id);
@@ -38,26 +33,22 @@ module.exports = {
                 });
             }
             
-            // Busca informações de nível do usuário
-            const rankCollection = await getCollection('rank');
-            const rankDoc = await rankCollection.findOne({ _id: 'main' });
+            const rankCollection = await getCollection('dadosUsuarios');
+            const rankDoc = await rankCollection.findOne({ _id: 'niveis' });
             
             let userLevel = 0;
-            if (rankDoc && rankDoc.users) {
+            if (rankDoc?.users) {
                 const userData = rankDoc.users.find(user => user.userId === interaction.user.id);
                 if (userData) {
                     userLevel = userData.level || 0;
                 }
             }
             
-            // Verificar qual é o cargo de nível mais alto que o usuário possui
             let nivelMaximoUsuario = 0;
             
-            if (cargosNivelDoc && cargosNivelDoc.cargos) {
-                // Ordenar cargos por nível (do maior para o menor)
+            if (cargosNivelDoc?.cargos) {
                 const cargosOrdenados = [...cargosNivelDoc.cargos].sort((a, b) => b.nivel - a.nivel);
                 
-                // Encontrar o cargo de nível mais alto que o usuário possui
                 for (const cargo of cargosOrdenados) {
                     if (cargosUsuario.includes(cargo.id)) {
                         nivelMaximoUsuario = cargo.nivel;
@@ -66,18 +57,13 @@ module.exports = {
                 }
             }
             
-            // Filtrar paletas - concedendo acesso a paletas de níveis inferiores
             const paletasOriginal = Object.keys(coresDoc.roles);
             const paletas = paletasOriginal.filter(paleta => {
-                // Cores básicas (sem nível) estão sempre disponíveis
                 if (!paleta.startsWith('nivel')) {
                     return true;
                 }
                 
-                // Para paletas de nível, verificar se é de nível inferior ou igual ao máximo
                 const nivelRequerido = parseInt(paleta.replace('nivel', '')) || 0;
-                
-                // Acesso hierárquico - libera cores de nível inferior ou igual ao nível máximo do usuário
                 return nivelMaximoUsuario >= nivelRequerido;
             });
             
@@ -85,73 +71,72 @@ module.exports = {
                 return interaction.editReply('Você não tem acesso a nenhuma cor personalizada. Obtenha os cargos necessários para desbloquear cores exclusivas. Use /custom-perfil para ver qual cargo você deveria ter.');
             }
             
-            // Inicialização de estados
-            let paletaAtual = 0; // Índice da paleta atual
-            let corAtual = 0;    // Índice da cor atual dentro da paleta
+            const state = {
+                paletaAtual: 0,
+                corAtual: 0
+            };
             
-            // Função para obter a paleta atual
             const getPaletaAtual = () => {
-                const paletaNome = paletas[paletaAtual];
+                const paletaNome = paletas[state.paletaAtual];
                 return {
                     nome: paletaNome,
                     cores: coresDoc.roles[paletaNome]
                 };
             };
             
-            // Função para obter a cor atual
             const getCorAtual = () => {
                 const paleta = getPaletaAtual();
                 const corNomes = Object.keys(paleta.cores);
-                const corNome = corNomes[corAtual];
+                const corNome = corNomes[state.corAtual];
                 return {
                     nome: corNome,
                     ...paleta.cores[corNome]
                 };
             };
             
-            // Função para criar o embed
+            const formatarNome = (nome) => {
+                return nome
+                    .replace(/([A-Z])/g, ' $1')
+                    .replace(/^./, str => str.toUpperCase());
+            };
+            
             const criarEmbed = () => {
                 const paleta = getPaletaAtual();
                 const cor = getCorAtual();
                 const corNomes = Object.keys(paleta.cores);
                 
-                // Formata o nome para exibição (transforma camelCase em palavras)
-                const formatarNome = (nome) => {
-                    return nome
-                        .replace(/([A-Z])/g, ' $1') // Insere espaço antes de cada letra maiúscula
-                        .replace(/^./, str => str.toUpperCase()); // Primeira letra maiúscula
-                };
-                
-                // Verifica se a paleta é um nível
                 const eNivel = paleta.nome.startsWith('nivel');
                 const titulo = eNivel ? `Nível ${paleta.nome.replace('nivel', '')}` : 
                     formatarNome(paleta.nome);
+                
+                const colorHex = cor.hex.replace('#', '');
+                const colorImageUrl = `https://singlecolorimage.com/get/${colorHex}/200x200`;
                 
                 return new EmbedBuilder()
                     .setTitle(`Cor: ${formatarNome(cor.nome)}`)
                     .setDescription(`Paleta: **${titulo}**`)
                     .setColor(cor.hex)
-                    .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+                    .setThumbnail(colorImageUrl)
                     .setFooter({ 
-                        text: `Paleta ${paletaAtual + 1}/${paletas.length} • Cor ${corAtual + 1}/${corNomes.length}` 
+                        text: `Paleta ${state.paletaAtual + 1}/${paletas.length} • Cor ${state.corAtual + 1}/${corNomes.length}` 
                     });
             };
             
-            // Função para verificar se o usuário já tem algum cargo de cor
-            const verificarCargoCor = async () => {
-                // Obtem todos os IDs de cargo de cor
-                const todosCargosCor = [];
+            const getAllColorRoleIds = () => {
+                const ids = [];
                 for (const paleta in coresDoc.roles) {
                     for (const corNome in coresDoc.roles[paleta]) {
-                        todosCargosCor.push(coresDoc.roles[paleta][corNome].id);
+                        ids.push(coresDoc.roles[paleta][corNome].id);
                     }
                 }
-                
-                // Verifica se o membro tem algum desses cargos
-                return member.roles.cache.find(role => todosCargosCor.includes(role.id));
+                return ids;
             };
             
-            // Função para definir a cor escolhida
+            const verificarCargoCor = () => {
+                const todosCargosCorIds = getAllColorRoleIds();
+                return member.roles.cache.find(role => todosCargosCorIds.includes(role.id));
+            };
+            
             const definirCor = async (btnInteraction) => {
                 try {
                     await btnInteraction.deferUpdate();
@@ -159,7 +144,6 @@ module.exports = {
                     const cor = getCorAtual();
                     const cargoId = cor.id;
                     
-                    // Obtém o cargo pelo ID
                     const cargo = interaction.guild.roles.cache.get(cargoId);
                     if (!cargo) {
                         return btnInteraction.followUp({
@@ -168,18 +152,15 @@ module.exports = {
                         });
                     }
                     
-                    // Verifica se o membro já tem um cargo de cor e remove, se tiver
-                    const cargoCorAtual = await verificarCargoCor();
+                    const cargoCorAtual = verificarCargoCor();
                     if (cargoCorAtual) {
                         await member.roles.remove(cargoCorAtual);
                     }
                     
-                    // Adiciona o novo cargo de cor
                     await member.roles.add(cargo);
                     
-                    // Confirma a atribuição
                     await btnInteraction.followUp({
-                        content: `✅ Cor **${cor.nome.replace(/([A-Z])/g, ' $1').trim().replace(/^./, str => str.toUpperCase())}** definida com sucesso!`,
+                        content: `✅ Cor **${formatarNome(cor.nome)}** definida com sucesso!`,
                         ephemeral: true
                     });
                 } catch (error) {
@@ -191,7 +172,6 @@ module.exports = {
                 }
             };
             
-            // Função para criar botões de navegação
             const criarBotoes = () => {
                 const paleta = getPaletaAtual();
                 const corNomes = Object.keys(paleta.cores);
@@ -201,13 +181,13 @@ module.exports = {
                         .setCustomId('paleta_anterior')
                         .setLabel('◀️ Paleta Anterior')
                         .setStyle(ButtonStyle.Primary)
-                        .setDisabled(paletaAtual === 0),
+                        .setDisabled(state.paletaAtual === 0),
                     
                     new ButtonBuilder()
                         .setCustomId('paleta_proxima')
                         .setLabel('Próxima Paleta ▶️')
                         .setStyle(ButtonStyle.Primary)
-                        .setDisabled(paletaAtual === paletas.length - 1)
+                        .setDisabled(state.paletaAtual === paletas.length - 1)
                 );
                 
                 const botoesCor = new ActionRowBuilder().addComponents(
@@ -215,7 +195,7 @@ module.exports = {
                         .setCustomId('cor_anterior')
                         .setLabel('⬅️ Cor Anterior')
                         .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(corAtual === 0),
+                        .setDisabled(state.corAtual === 0),
                     
                     new ButtonBuilder()
                         .setCustomId('definir_cor')
@@ -226,25 +206,22 @@ module.exports = {
                         .setCustomId('cor_proxima')
                         .setLabel('Próxima Cor ➡️')
                         .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(corAtual === corNomes.length - 1)
+                        .setDisabled(state.corAtual === corNomes.length - 1)
                 );
                 
                 return [botoesPaleta, botoesCor];
             };
             
-            // Envia a primeira visualização
             const mensagem = await interaction.editReply({
                 embeds: [criarEmbed()],
                 components: criarBotoes(),
                 fetchReply: true
             });
             
-            // Cria um coletor para os botões
             const coletor = mensagem.createMessageComponentCollector({
-                time: 120000 // 2 minutos
+                time: 120000
             });
             
-            // Gerencia as interações com os botões
             coletor.on('collect', async (btnInteraction) => {
                 if (btnInteraction.user.id !== interaction.user.id) {
                     return btnInteraction.reply({
@@ -253,7 +230,6 @@ module.exports = {
                     });
                 }
                 
-                // Lógica de definição de cor
                 if (btnInteraction.customId === 'definir_cor') {
                     await definirCor(btnInteraction);
                     return;
@@ -262,35 +238,37 @@ module.exports = {
                 const paleta = getPaletaAtual();
                 const corNomes = Object.keys(paleta.cores);
                 
-                // Lógica de navegação
-                if (btnInteraction.customId === 'paleta_anterior') {
-                    paletaAtual--;
-                    corAtual = 0; // Reset para a primeira cor ao mudar de paleta
-                } else if (btnInteraction.customId === 'paleta_proxima') {
-                    paletaAtual++;
-                    corAtual = 0; // Reset para a primeira cor ao mudar de paleta
-                } else if (btnInteraction.customId === 'cor_anterior') {
-                    corAtual--;
-                } else if (btnInteraction.customId === 'cor_proxima') {
-                    corAtual++;
+                switch(btnInteraction.customId) {
+                    case 'paleta_anterior':
+                        state.paletaAtual--;
+                        state.corAtual = 0;
+                        break;
+                    case 'paleta_proxima':
+                        state.paletaAtual++;
+                        state.corAtual = 0;
+                        break;
+                    case 'cor_anterior':
+                        state.corAtual--;
+                        break;
+                    case 'cor_proxima':
+                        state.corAtual++;
+                        break;
                 }
                 
-                // Atualiza a mensagem
                 await btnInteraction.update({
                     embeds: [criarEmbed()],
                     components: criarBotoes()
                 });
             });
             
-            // Quando o tempo expira, remove os botões
             coletor.on('end', () => {
                 interaction.editReply({
                     components: []
-                }).catch(() => {}); // Ignora erros se a mensagem foi deletada
+                }).catch(() => {});
             });
             
         } catch (error) {
-            console.error('Erro ao executar o comando /custom-cor:', error);
+            console.error('Erro ao executar o comando /cor:', error);
             const mensagem = interaction.replied || interaction.deferred ? 
                 interaction.editReply : interaction.reply;
             

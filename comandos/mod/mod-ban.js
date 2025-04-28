@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const channelConfig = require('../../configuracoes/channel.json');
+const mongodb = require('../../configuracoes/mongodb');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -84,18 +84,23 @@ module.exports = {
                         { name: 'ID do Usuário', value: user.id },
                         { name: 'Motivo', value: reason },
                         { name: 'Mensagens deletadas', value: deleteMsgs ? 'Sim (últimos 7 dias)' : 'Não' },
-                        { name: 'Moderador', value: `${interaction.user.tag} (<@${interaction.user.id}>)` }
+                        { name: 'Sentenciador', value: `${interaction.user.tag} (<@${interaction.user.id}>)` }
                     )
                     .setThumbnail(user.displayAvatarURL())
                     .setTimestamp();
                 
+                // Buscar config de canais do MongoDB
+                const canalConfig = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'canais' });
+                
                 // Find the userlogs channel ID
                 let userlogsChannelId = null;
-                for (const category of channelConfig.categories) {
-                    const userlogsChannel = category.channels.find(channel => channel.name === 'userlogs');
-                    if (userlogsChannel) {
-                        userlogsChannelId = userlogsChannel.id;
-                        break;
+                if (canalConfig && canalConfig.categorias) {
+                    for (const categoria of canalConfig.categorias) {
+                        const userlogsChannel = categoria.canais ? categoria.canais.find(canal => canal.nome === 'userlogs') : null;
+                        if (userlogsChannel) {
+                            userlogsChannelId = userlogsChannel.id;
+                            break;
+                        }
                     }
                 }
                 
@@ -111,29 +116,6 @@ module.exports = {
                     content: `✅ O usuário ${user.tag} foi banido com sucesso.`,
                     ephemeral: true 
                 });
-                
-                // Try to DM the banned user
-                try {
-                    const userEmbed = new EmbedBuilder()
-                        .setColor('#FF0000')
-                        .setTitle(`Você foi banido de ${interaction.guild.name}`)
-                        .addFields(
-                            { name: 'Motivo', value: reason },
-                            { name: 'Moderador', value: `${interaction.user.tag}` }
-                        )
-                        .setTimestamp();
-                        
-                    await user.send({ embeds: [userEmbed] });
-                } catch (error) {
-                    // User might have DMs disabled
-                    console.log(`Não foi possível enviar DM para ${user.tag}`);
-                    
-                    // Inform the moderator that DM couldn't be sent
-                    await interaction.followUp({ 
-                        content: `Não foi possível notificar ${user.tag} via DM sobre o banimento. O usuário pode ter as mensagens diretas desativadas.`,
-                        ephemeral: true 
-                    });
-                }
                 
             } catch (error) {
                 console.error(error);

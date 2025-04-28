@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,7 +22,7 @@ Clique no botão abaixo e notifique sua intenção de parceria e você será res
 
         const row = new ActionRowBuilder().addComponents(button);
 
-        await interaction.reply({ content: requisitos, components: [row], flags: 'Ephemeral' });
+        await interaction.reply({ content: requisitos, components: [row], ephemeral: true });
 
         const filter = (i) => i.customId === 'notificar_responsavel' && i.user.id === interaction.user.id;
         const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
@@ -30,11 +30,41 @@ Clique no botão abaixo e notifique sua intenção de parceria e você será res
         collector.on('collect', async (i) => {
             if (i.customId === 'notificar_responsavel') {
                 const responsavelId = '1199908820135194677';
-                const userId = interaction.user.id;
+                const user = interaction.user;
+                const member = interaction.member;
 
                 try {
                     const responsavel = await interaction.client.users.fetch(responsavelId);
-                    await responsavel.send(`O usuário com ID ${userId} solicitou informações sobre parceria.`);
+                    
+                    // Criar uma embed rica com informações do usuário
+                    const embed = new EmbedBuilder()
+                        .setColor(0x4B0082)
+                        .setTitle('Nova Solicitação de Parceria')
+                        .setAuthor({ 
+                            name: `${user.username}`, 
+                            iconURL: user.displayAvatarURL({ dynamic: true }) 
+                        })
+                        .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }))
+                        .setDescription(`O usuário [${user.username}](https://discord.com/users/${user.id}) solicitou informações sobre parceria.`)
+                        .addFields(
+                            { name: '📋 Nome', value: `${user.username}`, inline: true },
+                            { name: '🆔 ID', value: `${user.id}`, inline: true },
+                            { name: '📅 Conta Criada', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true }
+                        )
+                        .setFooter({ text: `ID: ${user.id}` })
+                        .setTimestamp();
+                    
+                    // Adicionar informação de quando entrou no servidor, se disponível
+                    if (member && member.joinedTimestamp) {
+                        embed.addFields({ 
+                            name: '📥 Entrou no Servidor', 
+                            value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, 
+                            inline: true 
+                        });
+                    }
+                    
+                    // Enviar a embed para o responsável
+                    await responsavel.send({ embeds: [embed] });
 
                     // Atualize o botão para desativá-lo
                     const disabledButton = ButtonBuilder.from(button).setDisabled(true);

@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const { MongoClient } = require('mongodb');
+const { findOne, upsert } = require('../../configuracoes/mongodb');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,222 +26,171 @@ module.exports = {
     const currentChannelId = interaction.channelId;
     const guildId = interaction.guildId;
     
-    // Usar a conexão MongoDB do index.js
-    const client = new MongoClient(process.env.MONGO_URI);
-    
     try {
-      // Conectar ao MongoDB
-      await client.connect();
-      const db = client.db('ignis'); // Usar o mesmo nome de banco de dados do index.js
-      const collection = db.collection('channelConfigs');
+      const COLLECTION_NAME = 'configuracoes';
+      const DOCUMENT_ID = 'canais';
       
       // Buscar configuração no MongoDB
-      let channelConfig = await collection.findOne({ guildId });
+      let canalConfig = await findOne(COLLECTION_NAME, { _id: DOCUMENT_ID });
       
-      // Se não existir, importar do arquivo JSON e salvar no MongoDB
-      if (!channelConfig) {
-        const fs = require('fs');
-        const path = require('path');
-        const configPath = path.join(__dirname, '../../configuracoes/channel.json');
-        
-        if (fs.existsSync(configPath)) {
-          const configData = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-          
-          // Verificar e adicionar objeto permissions a todos os canais que não o possuem
-          for (const category of configData.categories) {
-            for (const channel of category.channels) {
-              if (!channel.permissions) {
-                channel.permissions = {
-                  send_messages: false,
-                  add_reactions: false
-                };
-              }
-            }
-          }
-          
-          channelConfig = {
-            guildId,
-            categories: configData.categories
-          };
-          await collection.insertOne(channelConfig);
-        } else {
-          await client.close();
-          return interaction.editReply('Erro: Arquivo de configuração não encontrado.');
-        }
-      } else {
-        // Verificar e adicionar objeto permissions para canais no MongoDB
-        let updated = false;
-        for (const category of channelConfig.categories) {
-          for (const channel of category.channels) {
-            if (!channel.permissions) {
-              channel.permissions = {
-                send_messages: false,
-                add_reactions: false
-              };
-              updated = true;
-            }
-          }
-        }
-        
-        // Se algum canal foi atualizado, salvamos as alterações
-        if (updated) {
-          await collection.updateOne({ guildId }, { $set: channelConfig });
-        }
+      if (!canalConfig) {
+        return interaction.editReply('Erro: Configuração de canais não encontrada.');
       }
       
+      // Verificar e processar os canais conforme o escopo selecionado
       if (escopo === 'esse_canal') {
-        // Alternar permissões apenas para o canal atual
-        let channelFound = false;
-        let channelName = '';
-        
-        for (const category of channelConfig.categories) {
-          for (const channel of category.channels) {
-            if (channel.id === currentChannelId) {
-              // Verificar se permissions existe
-              if (!channel.permissions) {
-                channel.permissions = {
-                  send_messages: false,
-                  add_reactions: false
-                };
-              }
-              
-              // Inverter todas as permissões
-              for (const perm in channel.permissions) {
-                channel.permissions[perm] = !channel.permissions[perm];
-              }
-              channelFound = true;
-              channelName = channel.name;
-              break;
-            }
-          }
-          if (channelFound) break;
-        }
-        
-        if (!channelFound) {
-          await client.close();
-          return interaction.editReply('Este canal não foi encontrado na configuração.');
-        }
-        
-        // Aplicar as permissões no Discord
-        const channel = interaction.channel;
-        const everyoneRole = interaction.guild.roles.cache.find(role => role.name === '@everyone');
-        
-        const channelData = channelConfig.categories
-          .flatMap(category => category.channels)
-          .find(c => c.id === currentChannelId);
-        
-        await channel.permissionOverwrites.edit(everyoneRole, {
-          SendMessages: channelData.permissions.send_messages,
-          AddReactions: channelData.permissions.add_reactions
-        });
-        
-        await interaction.editReply(`Permissões do canal #${channelName} foram alternadas com sucesso.`);
+        await alternarCanalUnico(interaction, currentChannelId, canalConfig, guildId);
       } else {
-        // Alternar permissões para todos os canais
-        const affectedChannels = [];
-        
-        for (const category of channelConfig.categories) {
-          for (const channel of category.channels) {
-            // Verificar se permissions existe
-            if (!channel.permissions) {
-              channel.permissions = {
-                send_messages: false,
-                add_reactions: false
-              };
-            }
-            
-            // Inverter todas as permissões
-            for (const perm in channel.permissions) {
-              channel.permissions[perm] = !channel.permissions[perm];
-            }
-            
-            // Aplicar as permissões no Discord
-            const discordChannel = interaction.guild.channels.cache.get(channel.id);
-            if (discordChannel) {
-              const everyoneRole = interaction.guild.roles.cache.find(role => role.name === '@everyone');
-              
-              await discordChannel.permissionOverwrites.edit(everyoneRole, {
-                SendMessages: channel.permissions.send_messages,
-                AddReactions: channel.permissions.add_reactions
-              });
-              
-              // Adicionar à lista de canais afetados
-              affectedChannels.push({
-                name: channel.name,
-                id: channel.id,
-                category: category.name,
-                permissions: channel.permissions
-              });
-            }
-          }
-        }
-        
-        // Criar a embed com as informações
-        const embed = new EmbedBuilder()
-          .setTitle('Permissões Alternadas')
-          .setColor('#00FF00')
-          .setDescription(`Foram alternadas as permissões de ${affectedChannels.length} canais.`)
-          .setTimestamp();
-          
-        // Agrupar canais por categoria para a embed
-        const categorizedChannels = {};
-        for (const channel of affectedChannels) {
-          if (!categorizedChannels[channel.category]) {
-            categorizedChannels[channel.category] = [];
-          }
-          categorizedChannels[channel.category].push(channel);
-        }
-        
-        // Adicionar campos por categoria (limite de 25 campos no total)
-        const maxFields = 25;
-        let fieldCount = 0;
-        
-        for (const category in categorizedChannels) {
-          if (fieldCount >= maxFields) break;
-          
-          // Criar texto com os canais desta categoria
-          let channelList = '';
-          for (const channel of categorizedChannels[category]) {
-            const status = channel.permissions.send_messages ? '✅' : '❌';
-            channelList += `${status} <#${channel.id}>\n`;
-            
-            // Evitar exceder o limite de 1024 caracteres por campo
-            if (channelList.length > 900) {
-              channelList += '... e mais canais';
-              break;
-            }
-          }
-          
-          embed.addFields({ name: `📁 ${category}`, value: channelList || 'Nenhum canal afetado', inline: false });
-          fieldCount++;
-        }
-        
-        // Adicionar campo de legenda
-        if (fieldCount < maxFields) {
-          embed.addFields({ 
-            name: 'Legenda', 
-            value: '🔓 - Envio de mensagens permitido\n🔒 - Envio de mensagens bloqueado', 
-            inline: false 
-          });
-        }
-        
-        // Enviar embed com os resultados
-        await interaction.editReply({ embeds: [embed] });
+        await alternarTodosCanais(interaction, canalConfig, guildId);
       }
-      
-      // Salvar as alterações no MongoDB
-      await collection.updateOne(
-        { guildId },
-        { $set: channelConfig },
-        { upsert: true }
-      );
       
     } catch (error) {
       console.error('Erro ao alternar permissões:', error);
       await interaction.editReply('Ocorreu um erro ao alternar as permissões dos canais.');
-    } finally {
-      // Fechar conexão com MongoDB
-      await client.close();
     }
   },
 };
+
+async function alternarCanalUnico(interaction, canalId, canalConfig, guildId) {
+  let canalEncontrado = false;
+  let canalAlterado = null;
+  const COLLECTION_NAME = 'configuracoes';
+  
+  // Encontrar e alterar as permissões do canal específico
+  outerLoop: for (const categoria of canalConfig.categorias) {
+    for (const canal of categoria.canais) {
+      if (canal.id === canalId) {
+        if (!canal.permissoes) {
+          canal.permissoes = {
+            enviarMensagens: false,
+            adicionarReacoes: false
+          };
+        }
+        
+        // Inverter permissões
+        canal.permissoes.enviarMensagens = !canal.permissoes.enviarMensagens;
+        canal.permissoes.adicionarReacoes = !canal.permissoes.adicionarReacoes;
+        
+        canalEncontrado = true;
+        canalAlterado = { 
+          nome: canal.nome, 
+          permissoes: canal.permissoes 
+        };
+        break outerLoop;
+      }
+    }
+  }
+  
+  if (!canalEncontrado) {
+    return interaction.editReply('Este canal não foi encontrado na configuração.');
+  }
+  
+  // Aplicar as permissões no Discord
+  const canal = interaction.channel;
+  const cargoEveryone = interaction.guild.roles.cache.find(role => role.name === '@everyone');
+  
+  await canal.permissionOverwrites.edit(cargoEveryone, {
+    SendMessages: canalAlterado.permissoes.enviarMensagens,
+    AddReactions: canalAlterado.permissoes.adicionarReacoes
+  });
+  
+  // Salvar alterações no MongoDB
+  await upsert(COLLECTION_NAME, { _id: 'canais' }, { $set: canalConfig });
+  
+  // Responder ao usuário
+  const status = canalAlterado.permissoes.enviarMensagens ? 'liberadas' : 'bloqueadas';
+  await interaction.editReply(`Permissões do canal #${canalAlterado.nome} foram ${status}.`);
+}
+
+async function alternarTodosCanais(interaction, canalConfig, guildId) {
+  const canaisAfetados = [];
+  const COLLECTION_NAME = 'configuracoes';
+  
+  for (const categoria of canalConfig.categorias) {
+    for (const canal of categoria.canais) {
+      // Ignorar canais sem permissões definidas no DB
+      if (!canal.permissoes) continue;
+      
+      // Inverter permissões
+      canal.permissoes.enviarMensagens = !canal.permissoes.enviarMensagens;
+      canal.permissoes.adicionarReacoes = !canal.permissoes.adicionarReacoes;
+      
+      // Aplicar as permissões no Discord
+      const canalDiscord = interaction.guild.channels.cache.get(canal.id);
+      if (canalDiscord) {
+        const cargoEveryone = interaction.guild.roles.cache.find(role => role.name === '@everyone');
+        
+        await canalDiscord.permissionOverwrites.edit(cargoEveryone, {
+          SendMessages: canal.permissoes.enviarMensagens,
+          AddReactions: canal.permissoes.adicionarReacoes
+        });
+        
+        canaisAfetados.push({
+          nome: canal.nome,
+          id: canal.id,
+          categoria: categoria.nome,
+          permissoes: canal.permissoes
+        });
+      }
+    }
+  }
+  
+  // Salvar alterações no MongoDB
+  await upsert(COLLECTION_NAME, { _id: 'canais' }, { $set: canalConfig });
+  
+  // Criar embed com resultados
+  const embed = criarEmbedResultados(canaisAfetados);
+  
+  // Responder ao usuário
+  await interaction.editReply({ embeds: [embed] });
+}
+
+function criarEmbedResultados(canaisAfetados) {
+  const embed = new EmbedBuilder()
+    .setTitle('Permissões Alternadas')
+    .setColor('#00FF00')
+    .setDescription(`Foram alternadas as permissões de ${canaisAfetados.length} canais.`)
+    .setTimestamp();
+    
+  // Agrupar canais por categoria
+  const canaisPorCategoria = {};
+  for (const canal of canaisAfetados) {
+    if (!canaisPorCategoria[canal.categoria]) {
+      canaisPorCategoria[canal.categoria] = [];
+    }
+    canaisPorCategoria[canal.categoria].push(canal);
+  }
+  
+  // Adicionar campos por categoria (limite de 25 campos no total)
+  const maxCampos = 25;
+  let contadorCampos = 0;
+  
+  for (const categoria in canaisPorCategoria) {
+    if (contadorCampos >= maxCampos) break;
+    
+    let listaCanais = '';
+    for (const canal of canaisPorCategoria[categoria]) {
+      const status = canal.permissoes.enviarMensagens ? '✅' : '❌';
+      listaCanais += `${status} <#${canal.id}>\n`;
+      
+      if (listaCanais.length > 900) {
+        listaCanais += '... e mais canais';
+        break;
+      }
+    }
+    
+    embed.addFields({ name: `📁 ${categoria}`, value: listaCanais || 'Nenhum canal afetado', inline: false });
+    contadorCampos++;
+  }
+  
+  // Adicionar legenda
+  if (contadorCampos < maxCampos) {
+    embed.addFields({ 
+      name: 'Legenda', 
+      value: '✅ - Envio de mensagens permitido\n❌ - Envio de mensagens bloqueado', 
+      inline: false 
+    });
+  }
+  
+  return embed;
+}

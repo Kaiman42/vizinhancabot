@@ -1,190 +1,187 @@
-require('dotenv').config(); // Carrega as variáveis do arquivo .env
+require('dotenv').config();
 const { MongoClient } = require('mongodb');
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const mongodb = require('./configuracoes/mongodb.js');
 
-// Configuração do MongoDB
-const uri = process.env.MONGO_URI; // Obtém o MONGO_URI do arquivo .env
-const client = new MongoClient(uri);
+const uri = process.env.MONGO_URI;
+const mongoClient = new MongoClient(uri);
 
-// Adicionando o intent GuildPresences para poder verificar o status dos usuários
 const botClient = new Client({ 
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,    // Necessary for member information
-        GatewayIntentBits.GuildPresences,   // Necessary for online/offline status
-        GatewayIntentBits.GuildMessages,    // Necessary to receive messages
-        GatewayIntentBits.MessageContent,   // Necessary to read message content
-        GatewayIntentBits.GuildVoiceStates  // Necessary for voice channel tracking
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildModeration
     ] 
 });
 
-botClient.once('ready', () => {
-    console.log(`Bot está online como ${botClient.user.tag}!`);
-});
-
-botClient.on('interactionCreate', async interaction => {
+// Sistema de limpeza diária de usuários que saíram
+async function cleanupRemovedUsersLevels() {
     try {
-        if (interaction.isCommand()) {
-            const command = commands.find(cmd => cmd.name === interaction.commandName);
-            if (!command) return;
-
-            try {
-                // Passar o objeto ignis como segundo parâmetro para o comando
-                await command.execute(interaction, global.ignisContext);
-            } catch (error) {
-                console.error(`Erro ao executar o comando ${interaction.commandName}:`, error);
-                // Verifica se a interação ainda pode ser respondida
-                if (interaction.replied || interaction.deferred) {
-                    await interaction.editReply({ 
-                        content: 'Houve um erro ao executar este comando.', 
-                        ephemeral: true 
-                    }).catch(err => console.error('Erro ao responder após falha no comando:', err));
-                } else {
-                    await interaction.reply({ 
-                        content: 'Houve um erro ao executar este comando.', 
-                        ephemeral: true 
-                    }).catch(err => console.error('Erro ao responder após falha no comando:', err));
-                }
-            }
-        } else if (interaction.isStringSelectMenu() || interaction.isButton()) {
-            // Atualizando de isSelectMenu() para isStringSelectMenu() conforme recomendação
-            const customId = interaction.customId;
-            
-            // Verifica interações do sistema de rádio
-            if (customId === 'select_radio' || customId.endsWith('_radio')) {
-                try {
-                    const radioCommand = require('./comandos/misc/radio');
-                    
-                    if (customId === 'select_radio' && typeof radioCommand.handleSelectMenu === 'function') {
-                        await radioCommand.handleSelectMenu(interaction);
-                    } else if (typeof radioCommand.handleButton === 'function') {
-                        await radioCommand.handleButton(interaction);
-                    }
-                } catch (error) {
-                    console.error(`Erro ao processar interação de rádio (${customId}):`, error);
-                    
-                    // Tentar responder à interação se possível
-                    if (!interaction.replied && !interaction.deferred) {
-                        await interaction.reply({ 
-                            content: 'Ocorreu um erro ao processar esta interação.', 
-                            ephemeral: true 
-                        }).catch(err => console.error('Não foi possível responder após erro:', err));
-                    }
-                }
-            }
-            
-            // Adicione outros manipuladores de interação conforme necessário
+        console.log('Iniciando limpeza automática de níveis de usuários que saíram...');
+        
+        // Obter servidor principal
+        const guildId = process.env.GUILD_ID;
+        if (!guildId) {
+            console.error('GUILD_ID não definido no arquivo .env');
+            return;
         }
+        
+        const guild = await botClient.guilds.fetch(guildId);
+        if (!guild) {
+            console.error(`Não foi possível encontrar o servidor com ID ${guildId}`);
+            return;
+        }
+        
+        // Buscar todos os membros do servidor
+        await guild.members.fetch();
+        const currentMemberIds = guild.members.cache.map(member => member.id);
+        
+        // Buscar dados de níveis no MongoDB
+        //const niveisDoc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' });
+        
+        if (!niveisDoc || !niveisDoc.users || !Array.isArray(niveisDoc.users)) {
+            console.log('Nenhum dado de níveis encontrado ou formato inválido.');
+            return;
+        }
+        
+        // Identificar usuários que saíram do servidor
+        const usersNotInServer = niveisDoc.users.filter(user => !currentMemberIds.includes(user.userId));
+        
+        if (usersNotInServer.length === 0) {
+            console.log('Não há usuários removidos para limpar.');
+            return;
+        }
+        
+        // Remover usuários que saíram
+        const newUsersArray = niveisDoc.users.filter(user => currentMemberIds.includes(user.userId));
+        
+        // Atualizar o documento no MongoDB
+        await mongodb.updateOne(
+            mongodb.COLLECTIONS.DADOS_USUARIOS,
+            //{ _id: 'niveis' },
+            { $set: { users: newUsersArray } }
+        );
+        
+        console.log(`Limpeza concluída. Removidos ${usersNotInServer.length} usuários.`);
+        
+        // Lista detalhada dos usuários removidos
+        usersNotInServer.forEach(user => {
+            console.log(`- Removido: ID: ${user.userId}, Nome: ${user.username}, Nível: ${user.level}, XP: ${user.xp}`);
+        });
     } catch (error) {
-        console.error('Erro geral no manipulador de interações:', error);
+        console.error('Erro durante a limpeza de níveis:', error);
     }
-});
+}
 
 const commands = [];
 const commandsPath = path.join(__dirname, 'comandos');
+const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
 
-// Função para carregar comandos de forma recursiva
 function loadCommands(dir) {
     const files = fs.readdirSync(dir, { withFileTypes: true });
     for (const file of files) {
         const fullPath = path.join(dir, file.name);
         if (file.isDirectory()) {
-            loadCommands(fullPath); // Recursivamente carrega subpastas
+            loadCommands(fullPath);
         } else if (file.name.endsWith('.js')) {
-            const command = require(fullPath);
-            if (command.data && typeof command.data.toJSON === 'function') {
-                commands.push({
-                    ...command.data.toJSON(),
-                    execute: command.execute,
-                });
-            } else {
-                console.warn(`O arquivo ${fullPath} não possui um comando válido.`);
+            try {
+                console.log(`Carregando comando: ${fullPath}`);
+                const command = require(fullPath);
+                if (command.data && typeof command.data.toJSON === 'function') {
+                    const commandData = command.data.toJSON();
+                    console.log(`Comando carregado com sucesso: ${commandData.name}`);
+                    commands.push({
+                        ...commandData,
+                        execute: command.execute,
+                    });
+                } else {
+                    console.warn(`O arquivo ${fullPath} não possui um comando válido.`);
+                }
+            } catch (error) {
+                console.error(`Erro ao carregar comando de ${fullPath}:`, error);
             }
         }
     }
 }
 
-loadCommands(commandsPath);
-
-const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-
-(async () => {
+async function registerCommands() {
     try {
         console.log('Iniciando o registro de comandos de barra...');
-        // Registra ou atualiza os comandos
         await rest.put(
-            Routes.applicationCommands(process.env.CLIENT_ID), // Para comandos globais
+            Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands },
         );
         console.log('Comandos registrados ou atualizados com sucesso!');
     } catch (error) {
         console.error('Erro ao registrar comandos:', error);
     }
-})();
+}
 
-botClient.login(process.env.BOT_TOKEN);
-
-// Create a database context for the bot
 async function setupDatabase() {
     try {
-        await client.connect();
+        await mongoClient.connect();
         console.log('Conectado ao MongoDB com sucesso!');
         
-        // Create the ignis database context
-        const db = client.db('ignis'); // Make sure to use the right case for your database name
+        const db = mongoClient.db('ignis');
         
-        // Create an ignis context object with database access
         const ignis = {
             database: db,
             client: botClient
         };
         
-        // Create required collections
-        const collections = ['rank', 'cargoRank', 'channelConfigs'];
-        for (const collectionName of collections) {
-            ignis.database[collectionName] = db.collection(collectionName);
-            console.log(`Collection '${collectionName}' initialized`);
-        }
-        
-        // Make ignis context available globally
         global.ignisContext = ignis;
         console.log('Contexto ignis disponibilizado globalmente');
         
-        // Initialize the level system with proper context
-        const niveisModule = require('./eventos/niveis');
+        // Inicializar todas as coleções do sistema
+        await mongodb.initializeCollections();
+        console.log('Coleções do banco de dados inicializadas com sucesso!');
         
-        // Inicializa as coleções necessárias
-        if (niveisModule.utils && typeof niveisModule.utils.initializeCollections === 'function') {
-            await niveisModule.utils.initializeCollections(ignis);
-            console.log('Coleções inicializadas com sucesso');
+        // Inserir documento de canais
+        try {
+            const canaisFile = path.join(__dirname, 'configuracoes/canais-config.json');
+            if (fs.existsSync(canaisFile)) {
+                const canaisData = JSON.parse(fs.readFileSync(canaisFile, 'utf8'));
+                await mongodb.upsert(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'canais' }, { $set: canaisData });
+                console.log('Verificação do documento "canais" concluída.');
+            } else {
+                console.log('Arquivo de configuração de canais não encontrado. Pulando atualização.');
+            }
+        } catch (error) {
+            console.error('Erro ao inserir documento de canais:', error);
         }
         
-        // Initialize the level system
-        await niveisModule.initialize(botClient, ignis);
+        //const niveisModule = require('./eventos/niveis');
+        const registroMembroModule = require('./eventos/registroMembro');
+        const registroServerModule = require('./eventos/registroServer');
+        const boasVindasModule = require('./eventos/boas-vindas');
+        const economiaModule = require('./configuracoes/economia');
         
-        // Setup event listener for the level system
-        botClient.on('messageCreate', async (message) => {
-            try {
-                await niveisModule.execute(message, ignis);
-            } catch (error) {
-                console.error('Error processing message for XP:', error);
-            }
-        });
+        await registroMembroModule.initialize(botClient, ignis);
+        console.log('Sistema de monitoramento de membros inicializado com sucesso!');
         
-        // Set up voice state update handler for voice XP
-        botClient.on('voiceStateUpdate', async (oldState, newState) => {
-            try {
-                if (niveisModule.utils && typeof niveisModule.utils.handleVoiceStateUpdate === 'function') {
-                    await niveisModule.utils.handleVoiceStateUpdate(oldState, newState, ignis);
-                }
-            } catch (error) {
-                console.error('Error handling voice state update:', error);
-            }
-        });
+        await registroServerModule.initialize(botClient, ignis);
+        console.log('Sistema de monitoramento de eventos do servidor inicializado com sucesso!');
         
-        // Export cooldowns for XP system
+        await boasVindasModule.initialize(botClient, ignis);
+        console.log('Sistema de boas-vindas inicializado com sucesso!');
+        
+        // Inicializar sistema de economia
+        await economiaModule.inicializarEconomia();
+        console.log('Sistema de economia inicializado com sucesso!');
+        
+        //if (niveisModule.utils && typeof niveisModule.utils.initializeCollections === 'function') {
+            //await niveisModule.utils.initializeCollections(ignis);
+           // console.log('Coleções específicas de níveis inicializadas com sucesso');
+        //}
+        
+        //await niveisModule.initialize(botClient, ignis);
+        
         global.cooldowns = new Map();
         global.voiceJoinTimes = new Map();
         
@@ -196,18 +193,148 @@ async function setupDatabase() {
     }
 }
 
-setupDatabase().catch(console.error);
-
-// Adicionar um tratamento para erros não capturados
-process.on('unhandledRejection', (error) => {
-    // Tratar especificamente erros de mensagem desconhecida para não derrubar o bot
-    if (error && error.code === 10008) {
-        console.warn('Aviso: Tentativa de interagir com uma mensagem que não existe mais (provavelmente foi excluída)');
-        if (error.url) {
-            console.warn('URL da requisição:', error.url);
-        }
-        return;
-    }
+function setupEventListeners() {
+    botClient.once('ready', () => {
+        console.log(`Bot está online como ${botClient.user.tag}!`);
+        
+        // Configurar intervalo de limpeza diária
+        const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 horas
+        
+        // Realizar a primeira limpeza após 1 hora online (para garantir que tudo esteja carregado)
+        setTimeout(() => {
+            cleanupRemovedUsersLevels();
+            
+            // Configurar limpeza diária
+            setInterval(cleanupRemovedUsersLevels, CLEANUP_INTERVAL_MS);
+            console.log(`Limpeza automática de níveis configurada. Próxima execução em 24 horas.`);
+        }, 60 * 60 * 1000); // 1 hora
+    });
     
-    console.error('Erro não tratado (unhandledRejection):', error);
-});
+    botClient.on('interactionCreate', handleInteraction);
+    
+    botClient.on('messageCreate', async (message) => {
+        try {
+            //const niveisModule = require('./eventos/niveis');
+            //await niveisModule.execute(message, global.ignisContext);
+        } catch (error) {
+            console.error('Error processing message for XP:', error);
+        }
+    });
+    
+    //botClient.on('voiceStateUpdate', async (oldState, newState) => {
+        //try {
+            //const niveisModule = require('./eventos/niveis');
+            //if (niveisModule.utils && typeof niveisModule.utils.handleVoiceStateUpdate === 'function') {
+                //await niveisModule.utils.handleVoiceStateUpdate(oldState, newState, global.ignisContext);
+            //}
+        //} catch (error) {
+            //console.error('Error handling voice state update:', error);
+        //}
+   // });
+    
+    process.on('unhandledRejection', (error) => {
+        if (error && error.code === 10008) {
+            console.warn('Aviso: Tentativa de interagir com uma mensagem que não existe mais');
+            if (error.url) {
+                console.warn('URL da requisição:', error.url);
+            }
+            return;
+        }
+        
+        console.error('Erro não tratado (unhandledRejection):', error);
+    });
+}
+
+async function handleInteraction(interaction) {
+    try {
+        if (interaction.isCommand()) {
+            handleCommandInteraction(interaction);
+        } else if (interaction.isStringSelectMenu() || interaction.isButton()) {
+            handleComponentInteraction(interaction);
+        }
+    } catch (error) {
+        console.error('Erro geral no manipulador de interações:', error);
+    }
+}
+
+async function handleCommandInteraction(interaction) {
+    const command = commands.find(cmd => cmd.name === interaction.commandName);
+    if (!command) return;
+
+    try {
+        await command.execute(interaction, global.ignisContext);
+    } catch (error) {
+        console.error(`Erro ao executar o comando ${interaction.commandName}:`, error);
+        
+        if (interaction.replied || interaction.deferred) {
+            await interaction.editReply({ 
+                content: 'Houve um erro ao executar este comando.', 
+                ephemeral: true 
+            }).catch(err => console.error('Erro ao responder após falha no comando:', err));
+        } else {
+            await interaction.reply({ 
+                content: 'Houve um erro ao executar este comando.', 
+                ephemeral: true 
+            }).catch(err => console.error('Erro ao responder após falha no comando:', err));
+        }
+    }
+}
+
+async function handleComponentInteraction(interaction) {
+    const customId = interaction.customId;
+    
+    try {
+        // Processamento para o comando de rádio
+        if (customId === 'radio_country_select' || customId.startsWith('radio_')) {
+            const radioCommand = require('./comandos/misc/radio');
+            
+            if (customId === 'radio_country_select') {
+                await radioCommand.handleCountrySelect(interaction);
+            } else {
+                await radioCommand.handleButton(interaction);
+            }
+            return;
+        }
+        
+        // Processamento para o comando de menus de rádio existentes
+        if (customId === 'select_radio' || customId.endsWith('_radio')) {
+            try {
+                const radioCommand = require('./comandos/misc/radio');
+                
+                if (customId === 'select_radio' && typeof radioCommand.handleSelectMenu === 'function') {
+                    await radioCommand.handleSelectMenu(interaction);
+                } else if (typeof radioCommand.handleButton === 'function') {
+                    await radioCommand.handleButton(interaction);
+                }
+            } catch (error) {
+                console.error(`Erro ao processar interação de rádio (${customId}):`, error);
+                
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ 
+                        content: 'Ocorreu um erro ao processar esta interação.', 
+                        ephemeral: true 
+                    }).catch(err => console.error('Não foi possível responder após erro:', err));
+                }
+            }
+        }
+    } catch (error) {
+        console.error(`Erro ao processar interação de componente (${customId}):`, error);
+        
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                content: 'Ocorreu um erro ao processar esta interação.',
+                ephemeral: true
+            }).catch(err => console.error('Erro ao responder após falha:', err));
+        }
+    }
+}
+
+async function initializeBot() {
+    loadCommands(commandsPath);
+    await registerCommands();
+    setupEventListeners();
+    await setupDatabase();
+    botClient.login(process.env.BOT_TOKEN);
+}
+
+initializeBot().catch(console.error);

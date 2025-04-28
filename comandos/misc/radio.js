@@ -1,118 +1,282 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
-const { getCollection } = require('../../configuracoes/database');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+const mongodb = require('../../configuracoes/mongodb');
 
 const players = new Map();
 const connections = new Map();
-const lastMessages = new Map();
+const radioMessages = new Map();
 const radioOwners = new Map();
 const disconnectTimers = new Map();
+const DISCONNECT_TIMEOUT = 60000;
 
-const safeDelete = async (msg) => {
-    if (!msg) return false;
-    
-    try {
-        await msg.delete();
-        return true;
-    } catch (error) {
-        if (error.code === 10008) {
-            console.log('Tentativa de excluir mensagem que não existe mais:', error.url);
-            return true;
-        }
-        console.error('Erro ao excluir mensagem:', error);
-        return false;
+function setupDisconnectTimer(guildId, radioChannelId, client) {
+    if (disconnectTimers.has(guildId)) {
+        clearInterval(disconnectTimers.get(guildId));
     }
-};
-
-const safeEdit = async (msg, opts) => {
-    if (!msg) return null;
     
-    try {
-        const editedMsg = await msg.edit(opts);
-        return editedMsg;
-    } catch (error) {
-        if (error.code === 10008) {
-            console.log('Tentativa de editar mensagem que não existe mais:', error.url);
-            return null;
+    const timer = setInterval(async () => {
+        try {
+            const guild = client.guilds.cache.get(guildId);
+            if (!guild) return;
+            
+            const channel = guild.channels.cache.get(radioChannelId);
+            if (!channel) return;
+            
+            const members = channel.members.filter(member => !member.user.bot);
+            
+            if (members.size === 0) {
+                console.log(`Canal de rádio ${radioChannelId} está vazio. Desconectando em 15 segundos...`);
+                
+                setTimeout(async () => {
+                    try {
+                        const refreshedChannel = await guild.channels.fetch(radioChannelId);
+                        const refreshedMembers = refreshedChannel.members.filter(member => !member.user.bot);
+                        
+                        if (refreshedMembers.size === 0) {
+                            console.log('Canal continua vazio. Desconectando rádio...');
+                            await stopRadio(guildId);
+                            
+                            try {
+                                const channels = await getChannels(guildId);
+                                if (channels?.botChannelId) {
+                                    const botChannel = await guild.channels.fetch(channels.botChannelId);
+                                    await botChannel.send('📻 A rádio foi desligada automaticamente por inatividade.');
+                                }
+                            } catch (notifyError) {
+                                console.error('Erro ao notificar desconexão automática:', notifyError);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Erro ao verificar canal para desconexão automática:', error);
+                    }
+                }, 15000);
+            }
+        } catch (error) {
+            console.error('Erro no timer de desconexão automática:', error);
         }
-        console.error('Erro ao editar mensagem:', error);
-        return null;
-    }
-};
-
-async function loadConfig() {
-    const collection = await getCollection('radios');
-    const config = await collection.findOne({});
-    return config || { radios: [], guildConfigs: {} };
+    }, 15000);
+    
+    disconnectTimers.set(guildId, timer);
 }
 
-async function getChannelIds(guildId) {
+async function loadRadios() {
     try {
-        const collection = await getCollection('channelConfigs');
-        const config = await collection.findOne({ guildId });
+        const radiosDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'radios' });
         
-        if (!config) return null;
-        
-        let botChannelId = null;
-        let radioChannelId = null;
-        
-        for (const category of config.categories || []) {
-            for (const channel of category.channels || []) {
-                if (channel.name === 'bot') {
-                    botChannelId = channel.id;
-                }
-                if (channel.name === 'radio247') {
-                    radioChannelId = channel.id;
-                }
-                
-                if (botChannelId && radioChannelId) {
-                    return { botChannelId, radioChannelId };
-                }
-            }
+        if (!radiosDoc) {
+            return {};
         }
         
-        return { botChannelId, radioChannelId };
+        const { _id, ...radiosData } = radiosDoc;
+        return radiosData;
     } catch (error) {
-        console.error('Erro ao buscar IDs dos canais:', error);
+        console.error('Erro ao carregar rádios:', error);
+        return {};
+    }
+}
+
+async function getChannels(guildId) {
+    try {
+        const configDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'canais' });
+        
+        if (!configDoc || !configDoc.categorias) {
+            return null;
+        }
+        
+        let botChannelId = null;
+        
+        for (const categoria of configDoc.categorias) {
+            if (!categoria.canais) continue;
+            
+            for (const canal of categoria.canais) {
+                if (canal.nome === 'bot') {
+                    botChannelId = canal.id;
+                    break;
+                }
+            }
+            if (botChannelId) break;
+        }
+        
+        return { botChannelId };
+    } catch (error) {
+        console.error('Erro ao buscar canal de bot:', error);
         return null;
     }
 }
 
 async function hasDjRole(member) {
     try {
-        const collection = await getCollection('escopo');
-        const cargoConfig = await collection.findOne({ _id: 'cargos' });
+        const configDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'escopos' });
         
-        if (!cargoConfig?.cargos?.dj) {
-            console.error('Configuração de cargo DJ não encontrada');
-            return false;
+        if (!configDoc?.cargos?.dj) {
+            return true;
         }
         
-        return member.roles.cache.has(cargoConfig.cargos.dj.id);
+        return member.roles.cache.has(configDoc.cargos.dj.id);
     } catch (error) {
-        console.error('Erro ao verificar cargo de DJ:', error);
+        console.error('Erro ao verificar cargo DJ:', error);
+        return true;
+    }
+}
+
+async function playRadio(interaction, country, radioIndex) {
+    try {
+        const radios = await loadRadios();
+        
+        if (!radios[country] || !Array.isArray(radios[country])) {
+            await interaction.followUp({
+                content: `❌ País não encontrado: ${country}`,
+                flags: 'Ephemeral'
+            });
+            return;
+        }
+        
+        if (radioIndex < 0 || radioIndex >= radios[country].length) {
+            await interaction.followUp({
+                content: `❌ Rádio não encontrada (índice ${radioIndex})`,
+                flags: 'Ephemeral'
+            });
+            return;
+        }
+        
+        if (interaction.message && !interaction.customId.startsWith('radio_next') && 
+            !interaction.customId.startsWith('radio_prev')) {
+            try {
+                await interaction.message.delete();
+            } catch (error) {
+                console.error('Erro ao excluir mensagem de seleção:', error);
+            }
+        }
+        
+        const radio = radios[country][radioIndex];
+        
+        if (!radio.url) {
+            await interaction.followUp({
+                content: `❌ URL inválida para a rádio ${radio.name}`,
+                flags: 'Ephemeral'
+            });
+            return;
+        }
+        
+        const voiceChannel = interaction.member.voice.channel;
+        if (!voiceChannel) {
+            await interaction.followUp({
+                content: `❌ Você precisa estar em um canal de voz para usar este comando`,
+                flags: 'Ephemeral'
+            });
+            return;
+        }
+        
+        const guildId = interaction.guild.id;
+        const voiceChannelId = voiceChannel.id;
+        
+        let connection = connections.get(guildId);
+        if (!connection) {
+            connection = joinVoiceChannel({
+                channelId: voiceChannelId,
+                guildId: guildId,
+                adapterCreator: interaction.guild.voiceAdapterCreator,
+            });
+            
+            connections.set(guildId, connection);
+            radioOwners.set(guildId, interaction.user.id);
+        }
+        
+        let player = players.get(guildId);
+        if (!player) {
+            player = createAudioPlayer();
+            players.set(guildId, player);
+            
+            player.on(AudioPlayerStatus.Idle, () => {});
+            
+            player.on('error', error => {
+                console.error(`Erro no player para ${guildId}:`, error);
+                interaction.followUp({
+                    content: `❌ Erro ao reproduzir rádio: ${error.message}`,
+                    flags: 'Ephemeral'
+                }).catch(console.error);
+            });
+            
+            connection.subscribe(player);
+        }
+        
+        const resource = createAudioResource(radio.url, {
+            inlineVolume: true,
+        });
+        resource.volume?.setVolume(0.5);
+        
+        player.play(resource);
+        
+        const embed = new EmbedBuilder()
+            .setColor(0x3498db)
+            .setTitle(`🎵 Rádio: ${radio.name}`)
+            .setDescription(radio.description || 'Sem descrição')
+            .addFields(
+                { name: '📍 Local', value: radio.place || 'Desconhecido' },
+                { name: '🎧 Canal', value: `<#${voiceChannelId}>` },
+                { name: '🎭 DJ', value: `<@${radioOwners.get(guildId)}>` }
+            )
+            .setFooter({ text: `Rádio ${radioIndex + 1}/${radios[country].length} de ${country}` })
+            .setTimestamp();
+        
+        const countries = Object.keys(radios).filter(c => Array.isArray(radios[c]) && radios[c].length > 0);
+        
+        const countryMenu = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('radio_country_select')
+                .setPlaceholder('Mudar país')
+                .addOptions(countries.map(c => ({
+                    label: c,
+                    description: `${radios[c].length} rádios disponíveis`,
+                    value: c,
+                    default: c === country
+                })))
+        );
+        
+        const controlButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('radio_prev')
+                .setLabel('⏮️ Anterior')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('radio_stop')
+                .setLabel('⏹️ Parar')
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('radio_next')
+                .setLabel('⏭️ Próxima')
+                .setStyle(ButtonStyle.Secondary)
+        );
+        
+        const oldMessage = radioMessages.get(guildId);
+        if (oldMessage) {
+            try {
+                await oldMessage.delete();
+            } catch (error) {}
+        }
+        
+        const message = await interaction.followUp({
+            embeds: [embed],
+            components: [countryMenu, controlButtons],
+            fetchReply: true
+        });
+        
+        radioMessages.set(guildId, message);
+        
+        setupDisconnectTimer(guildId, voiceChannelId, interaction.client);
+        
+        return true;
+    } catch (error) {
+        console.error('Erro ao reproduzir rádio:', error);
+        await interaction.followUp({
+            content: `❌ Erro ao reproduzir rádio: ${error.message}`,
+            flags: 'Ephemeral'
+        });
         return false;
     }
 }
 
-function canControlRadio(interaction) {
-    const guildId = interaction.guild.id;
-    const userId = interaction.user.id;
-    
-    if (!radioOwners.has(guildId)) return true;
-    return radioOwners.get(guildId) === userId;
-}
-
-function createPlayer(guildId) {
-    if (!players.has(guildId)) {
-        const player = createAudioPlayer();
-        player.on('error', console.error);
-        players.set(guildId, player);
-    }
-    return players.get(guildId);
-}
-
-async function disconnectRadio(guildId, client) {
+async function stopRadio(guildId, interaction) {
     try {
         const player = players.get(guildId);
         if (player) {
@@ -126,377 +290,344 @@ async function disconnectRadio(guildId, client) {
             connections.delete(guildId);
         }
         
-        const message = lastMessages.get(guildId);
+        radioOwners.delete(guildId);
+        
+        const message = radioMessages.get(guildId);
         if (message) {
-            await safeDelete(message);
-            lastMessages.delete(guildId);
+            try {
+                await message.delete();
+            } catch (error) {}
+            
+            radioMessages.delete(guildId);
         }
         
         if (disconnectTimers.has(guildId)) {
-            clearTimeout(disconnectTimers.get(guildId));
+            clearInterval(disconnectTimers.get(guildId));
             disconnectTimers.delete(guildId);
         }
         
-        radioOwners.delete(guildId);
+        if (interaction) {
+            await interaction.followUp({
+                content: '✅ Rádio desconectada com sucesso!',
+                flags: 'Ephemeral'
+            });
+        }
         
-        console.log(`Rádio desconectada no servidor ${guildId} devido à saída do líder`);
+        return true;
     } catch (error) {
-        console.error(`Erro ao desconectar rádio no servidor ${guildId}:`, error);
-    }
-}
-
-async function isUserInVoiceChannel(userId, guildId, channelId, client) {
-    try {
-        const guild = await client.guilds.fetch(guildId);
-        if (!guild) return false;
+        console.error('Erro ao desconectar rádio:', error);
         
-        const member = await guild.members.fetch(userId);
-        if (!member) return false;
+        if (interaction) {
+            await interaction.followUp({
+                content: `❌ Erro ao desconectar rádio: ${error.message}`,
+                flags: 'Ephemeral'
+            });
+        }
         
-        return member.voice.channelId === channelId;
-    } catch (error) {
-        console.error('Erro ao verificar presença em canal de voz:', error);
         return false;
     }
 }
 
-async function setupLeaderMonitoring(interaction, guildId, userId, channelId) {
-    if (disconnectTimers.has(guildId)) {
-        clearTimeout(disconnectTimers.get(guildId));
-        disconnectTimers.delete(guildId);
+async function navigateRadios(interaction, direction) {
+    try {
+        const guildId = interaction.guild.id;
+        
+        const currentMessage = radioMessages.get(guildId);
+        if (!currentMessage || !currentMessage.embeds || currentMessage.embeds.length === 0) {
+            await interaction.followUp({
+                content: `❌ Não há rádio em execução no momento`,
+                flags: 'Ephemeral'
+            });
+            return false;
+        }
+        
+        const currentEmbed = currentMessage.embeds[0];
+        const footerText = currentEmbed.footer?.text || '';
+        const match = footerText.match(/Rádio (\d+)\/\d+ de (.+)/);
+        
+        if (!match) {
+            await interaction.followUp({
+                content: `❌ Não foi possível determinar a rádio atual`,
+                flags: 'Ephemeral'
+            });
+            return false;
+        }
+        
+        const currentIndex = parseInt(match[1]) - 1;
+        const country = match[2];
+        
+        const radios = await loadRadios();
+        if (!radios[country] || !Array.isArray(radios[country])) {
+            await interaction.followUp({
+                content: `❌ País não encontrado: ${country}`,
+                flags: 'Ephemeral'
+            });
+            return false;
+        }
+        
+        const countryRadios = radios[country];
+        
+        let newIndex;
+        if (direction === 'next') {
+            newIndex = (currentIndex + 1) % countryRadios.length;
+        } else {
+            newIndex = (currentIndex - 1 + countryRadios.length) % countryRadios.length;
+        }
+        
+        return await playRadio(interaction, country, newIndex);
+    } catch (error) {
+        console.error('Erro ao navegar entre rádios:', error);
+        await interaction.followUp({
+            content: `❌ Erro ao navegar entre rádios: ${error.message}`,
+            flags: 'Ephemeral'
+        });
+        return false;
     }
-    
-    const checkInterval = setInterval(async () => {
-        if (!connections.has(guildId) || !radioOwners.has(guildId)) {
-            clearInterval(checkInterval);
-            return;
-        }
-        
-        const isLeaderInCall = await isUserInVoiceChannel(userId, guildId, channelId, interaction.client);
-        
-        if (!isLeaderInCall) {
-            console.log(`Líder da rádio ${userId} saiu do canal de voz em ${guildId}. Agendando desconexão em 1 minuto.`);
-            
-            if (!disconnectTimers.has(guildId)) {
-                const timer = setTimeout(() => {
-                    disconnectRadio(guildId, interaction.client);
-                    clearInterval(checkInterval);
-                }, 60000);
-                
-                disconnectTimers.set(guildId, timer);
-                
-                const channelIds = await getChannelIds(guildId).catch(() => null);
-                if (channelIds?.botChannelId) {
-                    const botChannel = await interaction.client.channels.fetch(channelIds.botChannelId).catch(() => null);
-                    if (botChannel) {
-                        botChannel.send({
-                            content: `⚠️ O DJ responsável <@${userId}> saiu do canal de voz. A rádio será desligada em 1 minuto caso não retorne.`
-                        }).catch(console.error);
-                    }
-                }
-            }
-        } else if (disconnectTimers.has(guildId)) {
-            clearTimeout(disconnectTimers.get(guildId));
-            disconnectTimers.delete(guildId);
-            
-            console.log(`Líder da rádio ${userId} retornou ao canal de voz em ${guildId}. Cancelando desconexão.`);
-            
-            const channelIds = await getChannelIds(guildId).catch(() => null);
-            if (channelIds?.botChannelId) {
-                const botChannel = await interaction.client.channels.fetch(channelIds.botChannelId).catch(() => null);
-                if (botChannel) {
-                    botChannel.send({
-                        content: `✅ DJ responsável <@${userId}> retornou ao canal de voz. A rádio continuará funcionando normalmente.`
-                    }).catch(console.error);
-                }
-            }
-        }
-    }, 15000);
 }
 
-async function playRadio(interaction, radioData, message = null) {
-    const config = await loadConfig();
-    
-    let radioName, radioPlace;
-    
-    if (radioData.includes('_')) {
-        [radioName, radioPlace] = radioData.split('_');
-    } else {
-        radioName = radioData;
+async function checkRadioPermissions(interaction) {
+    const isDj = await hasDjRole(interaction.member);
+    if (!isDj) {
+        await interaction.reply({
+            content: '❌ Você precisa ter o cargo de DJ para usar este comando.',
+            flags: 'Ephemeral'
+        });
+        return false;
     }
     
-    const radio = radioPlace
-        ? config.radios.find(r => r.name === radioName && r.place === radioPlace)
-        : config.radios.find(r => r.name === radioName);
-        
-    if (!radio) {
-        await interaction.followUp({ content: '❌ Rádio não encontrada', ephemeral: true }).catch(console.error);
-        return;
+    const channels = await getChannels(interaction.guild.id);
+    if (!channels) {
+        await interaction.reply({
+            content: '❌ Configuração de canais não encontrada.',
+            flags: 'Ephemeral'
+        });
+        return false;
     }
-
-    try {
-        const channelIds = await getChannelIds(interaction.guild.id);
-        if (!channelIds?.radioChannelId) {
-            await interaction.followUp({
-                content: '❌ Canal de voz para rádio não configurado',
-                ephemeral: true
-            }).catch(console.error);
-            return;
-        }
-
-        const voiceChannelId = channelIds.radioChannelId;
-        const guildId = interaction.guild.id;
-        let connection = connections.get(guildId);
-        
-        if (!connection) {
-            radioOwners.set(guildId, interaction.user.id);
-            setupLeaderMonitoring(interaction, guildId, interaction.user.id, voiceChannelId);
-            
-            connection = joinVoiceChannel({
-                channelId: voiceChannelId,
-                guildId: guildId,
-                adapterCreator: interaction.guild.voiceAdapterCreator
-            });
-            connections.set(guildId, connection);
-        }
-
-        const player = createPlayer(guildId);
-        const resource = createAudioResource(radio.url, { inlineVolume: true });
-        resource.volume.setVolume(0.4);
-        
-        player.play(resource);
-        connection.subscribe(player);
-
-        const embed = new EmbedBuilder()
-            .setColor(0x9146FF)
-            .setTitle(`Tocando: ${radio.name}`)
-            .setDescription(radio.description)
-            .addFields(
-                { name: 'Canal', value: `<#${voiceChannelId}>` },
-                { name: 'Local', value: radio.place },
-                { name: 'DJ Responsável', value: `<@${radioOwners.get(guildId)}>` }
-            )
-            .setTimestamp();
-
-        const buttons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('previous_radio').setLabel('⏮️').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('next_radio').setLabel('⏭️').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('stop_radio').setLabel('⏹️').setStyle(ButtonStyle.Danger)
-        );
-
-        if (message) {
-            await safeEdit(message, { embeds: [embed], components: [buttons] });
-        } else {
-            const msg = await interaction.followUp({ 
-                embeds: [embed], 
-                components: [buttons],
-                fetchReply: true
-            }).catch(console.error);
-            
-            if (msg) lastMessages.set(interaction.guild.id, msg);
-        }
-
-    } catch (error) {
-        console.error('Erro ao tocar rádio:', error);
-        await interaction.followUp({ content: '❌ Erro ao tocar rádio', ephemeral: true }).catch(console.error);
+    
+    if (!channels.botChannelId) {
+        await interaction.reply({
+            content: '❌ O canal "bot" não foi encontrado na configuração.',
+            flags: 'Ephemeral'
+        });
+        return false;
     }
+    
+    if (interaction.channel.id !== channels.botChannelId) {
+        await interaction.reply({
+            content: `❌ Este comando só pode ser usado no canal <#${channels.botChannelId}>.`,
+            flags: 'Ephemeral'
+        });
+        return false;
+    }
+    
+    if (!interaction.member.voice.channel) {
+        await interaction.reply({
+            content: '❌ Você precisa estar em um canal de voz para usar este comando.',
+            flags: 'Ephemeral'
+        });
+        return false;
+    }
+    
+    const guildId = interaction.guild.id;
+    if (connections.has(guildId) && 
+        radioOwners.has(guildId) && 
+        radioOwners.get(guildId) !== interaction.user.id) {
+        
+        await interaction.reply({
+            content: `❌ Apenas <@${radioOwners.get(guildId)}> pode controlar a rádio nesta sessão.`,
+            flags: 'Ephemeral'
+        });
+        return false;
+    }
+    
+    return { channels };
 }
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('radio')
         .setDescription('Toca uma rádio no canal de voz dedicado'),
-
+    
     async execute(interaction) {
-        await interaction.deferReply().catch(console.error);
+        await interaction.deferReply();
         
         try {
-            const isDj = await hasDjRole(interaction.member);
-            if (!isDj) {
-                return await interaction.editReply({ 
-                    content: '❌ Você precisa ter o cargo de DJ para usar este comando.',
-                    ephemeral: true 
-                }).catch(console.error);
+            const permissionCheck = await checkRadioPermissions(interaction);
+            if (!permissionCheck) return;
+            
+            const radios = await loadRadios();
+            const countries = Object.keys(radios).filter(c => Array.isArray(radios[c]) && radios[c].length > 0);
+            
+            if (countries.length === 0) {
+                return await interaction.editReply({
+                    content: '❌ Nenhuma rádio encontrada. Contate um administrador para configurar rádios.',
+                    flags: 'Ephemeral'
+                });
             }
             
-            const channelIds = await getChannelIds(interaction.guild.id);
-            
-            if (!channelIds?.botChannelId || !channelIds?.radioChannelId) {
-                return await interaction.editReply({ 
-                    content: '❌ Os canais "bot" e "radio247" não foram encontrados na configuração. Verifique se eles existem.',
-                    ephemeral: true 
-                }).catch(console.error);
-            }
-            
-            if (interaction.channel.id !== channelIds.botChannelId) {
-                return await interaction.editReply({ 
-                    content: `❌ Esse comando só pode ser usado no canal <#${channelIds.botChannelId}>.`,
-                    ephemeral: true 
-                }).catch(console.error);
-            }
-            
-            const radioVoiceChannel = interaction.guild.channels.cache.get(channelIds.radioChannelId);
-            if (!radioVoiceChannel) {
-                return await interaction.editReply({ 
-                    content: '❌ O canal de voz da rádio não foi encontrado.',
-                    ephemeral: true 
-                }).catch(console.error);
-            }
-            
-            const guildId = interaction.guild.id;
-            if (connections.has(guildId) && !canControlRadio(interaction)) {
-                return await interaction.editReply({ 
-                    content: `❌ Apenas <@${radioOwners.get(guildId)}> pode controlar a rádio nesta sessão.`,
-                    ephemeral: true 
-                }).catch(console.error);
-            }
-            
-            await safeDelete(lastMessages.get(interaction.guild.id));
-            
-            const config = await loadConfig();
-            
-            const menuOptions = config.radios.map((r, index) => ({
-                label: `${r.name} (${r.place})`,
-                description: r.description || 'Sem descrição',
-                value: `${index}_${r.name}_${r.place}`
+            const selectOptions = countries.map(country => ({
+                label: country,
+                description: `${radios[country].length} rádios disponíveis`,
+                value: country
             }));
             
-            const menu = new ActionRowBuilder().addComponents(
+            const row = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
-                    .setCustomId('select_radio')
-                    .setPlaceholder('Escolha uma rádio')
-                    .addOptions(menuOptions)
+                    .setCustomId('radio_country_select')
+                    .setPlaceholder('Escolha um país')
+                    .addOptions(selectOptions)
             );
             
-            const reply = await interaction.editReply({
-                content: 'Selecione uma rádio:',
-                components: [menu]
-            }).catch(console.error);
-            
-            if (reply) lastMessages.set(interaction.guild.id, reply);
+            await interaction.editReply({
+                content: '📻 Selecione um país para ver as rádios disponíveis:',
+                components: [row]
+            });
         } catch (error) {
             console.error('Erro ao executar comando de rádio:', error);
             await interaction.editReply({
-                content: '❌ Ocorreu um erro ao processar o comando.',
-                ephemeral: true
-            }).catch(console.error);
+                content: `❌ Ocorreu um erro ao executar o comando: ${error.message}`,
+                flags: 'Ephemeral'
+            });
         }
     },
-
-    async handleSelectMenu(interaction) {
-        await interaction.deferUpdate().catch(console.error);
+    
+    async handleCountrySelect(interaction) {
+        await interaction.deferUpdate();
         
         try {
-            const isDj = await hasDjRole(interaction.member);
-            if (!isDj) {
-                await interaction.followUp({ 
+            if (!(await hasDjRole(interaction.member))) {
+                return await interaction.followUp({
                     content: '❌ Você precisa ter o cargo de DJ para usar este comando.',
-                    ephemeral: true 
-                }).catch(console.error);
-                return;
+                    flags: 'Ephemeral'
+                });
             }
             
             const guildId = interaction.guild.id;
-            if (connections.has(guildId) && !canControlRadio(interaction)) {
-                await interaction.followUp({ 
+            
+            if (connections.has(guildId) && radioOwners.has(guildId) && 
+                radioOwners.get(guildId) !== interaction.user.id) {
+                
+                return await interaction.followUp({
                     content: `❌ Apenas <@${radioOwners.get(guildId)}> pode controlar a rádio nesta sessão.`,
-                    ephemeral: true 
-                }).catch(console.error);
+                    flags: 'Ephemeral'
+                });
+            }
+            
+            const country = interaction.values[0];
+            
+            const radios = await loadRadios();
+            
+            if (!radios[country] || !Array.isArray(radios[country]) || radios[country].length === 0) {
+                return await interaction.followUp({
+                    content: `❌ Nenhuma rádio encontrada para ${country}.`,
+                    flags: 'Ephemeral'
+                });
+            }
+            
+            const countryRadios = radios[country];
+            
+            const currentMessage = radioMessages.get(guildId);
+            if (currentMessage && radioOwners.get(guildId) === interaction.user.id) {
+                await playRadio(interaction, country, 0);
                 return;
             }
             
-            const channelIds = await getChannelIds(interaction.guild.id);
-            if (!channelIds?.botChannelId || !channelIds?.radioChannelId) return;
+            const maxRadios = Math.min(countryRadios.length, 5);
+            const buttons = [];
             
-            if (interaction.channel.id !== channelIds.botChannelId) return;
-            
-            const selectedValue = interaction.values[0];
-            const parts = selectedValue.split('_');
-            
-            if (parts.length >= 3) {
-                const index = parts[0];
-                const place = parts[parts.length - 1];
-                
-                const config = await loadConfig();
-                const radioIndex = parseInt(index);
-                
-                if (!isNaN(radioIndex) && radioIndex >= 0 && radioIndex < config.radios.length) {
-                    const radio = config.radios[radioIndex];
-                    await playRadio(interaction, radio.name + "_" + radio.place);
-                }
+            for (let i = 0; i < maxRadios; i++) {
+                buttons.push(
+                    new ButtonBuilder()
+                        .setCustomId(`radio_play_${country}_${i}`)
+                        .setLabel(countryRadios[i].name)
+                        .setStyle(ButtonStyle.Primary)
+                );
             }
             
-            if (interaction.message) {
-                await interaction.message.delete().catch(() => {});
+            buttons.push(
+                new ButtonBuilder()
+                    .setCustomId('radio_back')
+                    .setLabel('⬅️ Voltar')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+            
+            const rows = [];
+            for (let i = 0; i < buttons.length; i += 5) {
+                const row = new ActionRowBuilder().addComponents(
+                    ...buttons.slice(i, i + 5)
+                );
+                rows.push(row);
             }
+            
+            await interaction.editReply({
+                content: `📻 Selecione uma rádio de ${country}:`,
+                components: rows
+            });
         } catch (error) {
-            console.error('Erro ao processar seleção de rádio:', error);
+            console.error('Erro ao processar seleção de país:', error);
+            await interaction.followUp({
+                content: `❌ Ocorreu um erro ao processar sua seleção: ${error.message}`,
+                flags: 'Ephemeral'
+            });
         }
     },
 
     async handleButton(interaction) {
-        if (!interaction.customId.endsWith('radio')) return;
-        
-        await interaction.deferUpdate().catch(console.error);
-        
-        try {
-            const isDj = await hasDjRole(interaction.member);
-            if (!isDj) {
-                await interaction.followUp({ 
-                    content: '❌ Você precisa ter o cargo de DJ para usar este comando.',
-                    ephemeral: true 
-                }).catch(console.error);
-                return;
-            }
-            
-            const guildId = interaction.guild.id;
-            if (!canControlRadio(interaction)) {
-                await interaction.followUp({ 
-                    content: `❌ Apenas <@${radioOwners.get(guildId)}> pode controlar a rádio nesta sessão.`,
-                    ephemeral: true 
-                }).catch(console.error);
-                return;
-            }
-            
-            const channelIds = await getChannelIds(interaction.guild.id);
-            if (!channelIds?.botChannelId || !channelIds?.radioChannelId) return;
-            
-            if (interaction.channel.id !== channelIds.botChannelId) return;
-            
-            const config = await loadConfig();
-            const radioName = interaction.message.embeds[0].title.split(': ')[1];
-            const radioPlace = interaction.message.embeds[0].fields.find(field => field.name === 'Local')?.value;
-            
-            let currentIndex = -1;
-            if (radioPlace) {
-                currentIndex = config.radios.findIndex(r => r.name === radioName && r.place === radioPlace);
-            } else {
-                currentIndex = config.radios.findIndex(r => r.name === radioName);
-            }
-            
-            if (currentIndex === -1) {
-                currentIndex = config.radios.findIndex(r => r.name === radioName);
-            }
-            
-            if (interaction.customId === 'stop_radio') {
-                await disconnectRadio(guildId, interaction.client);
-                return;
-            }
-            
-            const newIndex = interaction.customId === 'previous_radio' 
-                ? (currentIndex - 1 + config.radios.length) % config.radios.length
-                : (currentIndex + 1) % config.radios.length;
-            
-            const nextRadio = config.radios[newIndex];
-            await playRadio(interaction, `${nextRadio.name}_${nextRadio.place}`, interaction.message);
-        } catch (error) {
-            console.error('Erro ao processar botão de rádio:', error);
-        }
-    },
-    
-    disconnectRadio
-};
+        const customId = interaction.customId;
+        const guildId = interaction.guild.id;
 
-module.exports.connections = connections;
-module.exports.radioOwners = radioOwners;
-module.exports.disconnectTimers = disconnectTimers;
+        try {
+            if (!(await hasDjRole(interaction.member))) {
+                await interaction.reply({
+                    content: '❌ Você precisa ter o cargo de DJ para usar este comando.',
+                    flags: 'Ephemeral'
+                });
+                return;
+            }
+
+            if ((customId === 'radio_stop' || customId === 'radio_next' || customId === 'radio_prev') &&
+                radioOwners.has(guildId) && radioOwners.get(guildId) !== interaction.user.id) {
+
+                await interaction.reply({
+                    content: `❌ Apenas <@${radioOwners.get(guildId)}> pode controlar a rádio nesta sessão.`,
+                    flags: 'Ephemeral'
+                });
+                return;
+            }
+
+            await interaction.deferUpdate().catch(console.error);
+
+            if (customId === 'radio_stop') {
+                await stopRadio(guildId, interaction);
+            } else if (customId.startsWith('radio_play_')) {
+                if (connections.has(guildId) && radioOwners.has(guildId) && 
+                    radioOwners.get(guildId) !== interaction.user.id) {
+
+                    await interaction.followUp({
+                        content: `❌ Apenas <@${radioOwners.get(guildId)}> pode controlar a rádio nesta sessão.`,
+                        flags: 'Ephemeral'
+                    });
+                    return;
+                }
+
+                const parts = customId.split('_');
+                const country = parts[2];
+                const radioIndex = parseInt(parts[3]);
+
+                await playRadio(interaction, country, radioIndex);
+            } else if (customId === 'radio_back') {
+                await this.execute(interaction);
+            } else if (customId === 'radio_next') {
+                await navigateRadios(interaction, 'next');
+            } else if (customId === 'radio_prev') {
+                await navigateRadios(interaction, 'prev');
+            }
+        } catch (error) {
+            console.error('Erro ao processar botão:', error);
+            await interaction.followUp({
+                content: `❌ Ocorreu um erro ao processar o botão: ${error.message}`,
+                flags: 'Ephemeral'
+            });
+        }
+    }
+};

@@ -1,0 +1,66 @@
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { MongoClient } = require('mongodb');
+
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('convites')
+        .setDescription('Ativa ou desativa temporariamente os convites do servidor')
+        .addStringOption(option => 
+            option.setName('estado')
+                .setDescription('Estado dos convites')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'LIGAR', value: 'ligar' },
+                    { name: 'DESLIGAR', value: 'desligar' }
+                )
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // Apenas administradores
+    
+    async execute(interaction) {
+        await interaction.deferReply({ ephemeral: true });
+        
+        const estado = interaction.options.getString('estado');
+        const guildId = interaction.guildId;
+        
+        // Inicializar conexão com MongoDB
+        const uri = process.env.MONGO_URI;
+        const client = new MongoClient(uri);
+        
+        try {
+            await client.connect();
+            const db = client.db('ignis');
+            const configCollection = db.collection('serverConfigs');
+            
+            // Atualizar o estado dos convites no banco de dados
+            await configCollection.updateOne(
+                { guildId },
+                { $set: { 
+                    guildId,
+                    convitesAtivos: estado === 'ligar',
+                    convitesDesativadosEm: estado === 'desligar' ? new Date() : null
+                }},
+                { upsert: true }
+            );
+            
+            if (estado === 'desligar') {
+                // Apenas desativar convites sem excluí-los
+                await interaction.editReply({
+                    content: `✅ Os convites do servidor foram **DESATIVADOS**.\n\nOs convites continuam existindo, mas novos membros que tentarem entrar serão automaticamente removidos.\n\nUse \`/convites LIGAR\` para reativar a entrada de novos membros.`
+                });
+            } else {
+                // Reativar convites
+                await interaction.editReply({
+                    content: '✅ Convites para o servidor foram **ATIVADOS**. Novos membros podem entrar normalmente.'
+                });
+            }
+            
+        } catch (error) {
+            console.error('Erro ao alterar estado dos convites:', error);
+            await interaction.editReply({
+                content: `❌ Ocorreu um erro ao ${estado === 'ligar' ? 'ativar' : 'desativar'} os convites: ${error.message}`
+            });
+        } finally {
+            await client.close();
+        }
+    }
+};
