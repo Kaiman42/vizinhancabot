@@ -17,7 +17,6 @@ async function initialize(client, ignisContext) {
         setupEmojiStickersHandlers(client, configuracoesCollection);
         setupServerSettingsHandlers(client, configuracoesCollection);
         
-        console.log('Módulo de registro de eventos do servidor inicializado com sucesso!');
     } catch (error) {
         console.error('Erro ao inicializar módulo de registro de servidor:', error);
     }
@@ -792,7 +791,6 @@ async function findServerLogChannel(configCollection, guildId) {
     try {
         const channelConfig = await configCollection.findOne({ _id: 'canais' });
         if (!channelConfig || !channelConfig.categorias) {
-            console.log('Documento de canais não encontrado ou sem categorias');
             return null;
         }
         
@@ -820,20 +818,9 @@ async function findServerLogChannel(configCollection, guildId) {
             }
         }
         
-        if (!serverLogChannelId) {
-            console.log('Canal de logs de servidor não encontrado em nenhuma categoria');
-            return null;
-        }
-        
         const guild = await global.ignisContext.client.guilds.fetch(guildId);
         const logChannel = await guild.channels.fetch(serverLogChannelId);
         
-        if (!logChannel) {
-            console.log(`Canal com ID ${serverLogChannelId} não encontrado no Discord`);
-            return null;
-        }
-        
-        console.log(`Canal de logs de servidor encontrado: ${logChannel.name} (${serverLogChannelId})`);
         return logChannel;
     } catch (error) {
         console.error('Erro ao buscar canal de log de servidor:', error);

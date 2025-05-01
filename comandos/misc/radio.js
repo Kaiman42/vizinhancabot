@@ -6,57 +6,69 @@ const players = new Map();
 const connections = new Map();
 const radioMessages = new Map();
 const radioOwners = new Map();
-const disconnectTimers = new Map();
-const DISCONNECT_TIMEOUT = 60000;
+const voiceTimeouts = new Map();
 
-function setupDisconnectTimer(guildId, radioChannelId, client) {
-    if (disconnectTimers.has(guildId)) {
-        clearInterval(disconnectTimers.get(guildId));
+// Função para verificar se um canal está vazio (excluindo bots)
+function isChannelEmpty(channel) {
+    return channel.members.filter(member => !member.user.bot).size === 0;
+}
+
+// Função para configurar a verificação de canal vazio
+function setupEmptyCheck(guildId, channelId, client) {
+    if (voiceTimeouts.has(guildId)) {
+        clearTimeout(voiceTimeouts.get(guildId));
     }
-    
-    const timer = setInterval(async () => {
-        try {
-            const guild = client.guilds.cache.get(guildId);
-            if (!guild) return;
-            
-            const channel = guild.channels.cache.get(radioChannelId);
-            if (!channel) return;
-            
-            const members = channel.members.filter(member => !member.user.bot);
-            
-            if (members.size === 0) {
-                console.log(`Canal de rádio ${radioChannelId} está vazio. Desconectando em 15 segundos...`);
-                
-                setTimeout(async () => {
-                    try {
-                        const refreshedChannel = await guild.channels.fetch(radioChannelId);
-                        const refreshedMembers = refreshedChannel.members.filter(member => !member.user.bot);
-                        
-                        if (refreshedMembers.size === 0) {
-                            console.log('Canal continua vazio. Desconectando rádio...');
-                            await stopRadio(guildId);
-                            
-                            try {
-                                const channels = await getChannels(guildId);
-                                if (channels?.botChannelId) {
-                                    const botChannel = await guild.channels.fetch(channels.botChannelId);
-                                    await botChannel.send('📻 A rádio foi desligada automaticamente por inatividade.');
-                                }
-                            } catch (notifyError) {
-                                console.error('Erro ao notificar desconexão automática:', notifyError);
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Erro ao verificar canal para desconexão automática:', error);
+
+    // Se o canal já estiver vazio, inicia o timeout
+    const channel = client.channels.cache.get(channelId);
+    if (channel && isChannelEmpty(channel)) {
+        const timeout = setTimeout(async () => {
+            try {
+                const refreshedChannel = await client.channels.fetch(channelId);
+                if (refreshedChannel && isChannelEmpty(refreshedChannel)) {
+                    const channels = await getChannels(guildId);
+                    if (channels?.botChannelId) {
+                        const botChannel = await client.channels.fetch(channels.botChannelId);
+                        await botChannel.send('📻 A rádio foi desligada automaticamente por inatividade.');
                     }
-                }, 15000);
+                    await stopRadio(guildId, null, true);
+                }
+            } catch (error) {
+                console.error('Erro ao verificar canal vazio:', error);
             }
-        } catch (error) {
-            console.error('Erro no timer de desconexão automática:', error);
-        }
-    }, 15000);
+        }, 15000); // 15 segundos de tolerância antes de desconectar
+
+        voiceTimeouts.set(guildId, timeout);
+    }
+}
+
+// Handler para eventos de mudança de estado de voz
+async function handleVoiceStateUpdate(oldState, newState) {
+    const guildId = oldState.guild.id;
     
-    disconnectTimers.set(guildId, timer);
+    // Se não tiver rádio tocando neste servidor, ignora
+    if (!connections.has(guildId)) return;
+
+    const connection = connections.get(guildId);
+    const channelId = connection.joinConfig.channelId;
+
+    // Se a mudança não é relacionada ao canal da rádio, ignora
+    if (oldState.channelId !== channelId && newState.channelId !== channelId) return;
+
+    const channel = oldState.guild.channels.cache.get(channelId);
+    if (!channel) return;
+
+    // Se alguém entrou no canal, limpa o timeout se existir
+    if (newState.channelId === channelId) {
+        if (voiceTimeouts.has(guildId)) {
+            clearTimeout(voiceTimeouts.get(guildId));
+            voiceTimeouts.delete(guildId);
+        }
+    }
+    // Se alguém saiu do canal e agora está vazio
+    else if (oldState.channelId === channelId && isChannelEmpty(channel)) {
+        setupEmptyCheck(guildId, channelId, oldState.client);
+    }
 }
 
 async function loadRadios() {
@@ -263,7 +275,7 @@ async function playRadio(interaction, country, radioIndex) {
         
         radioMessages.set(guildId, message);
         
-        setupDisconnectTimer(guildId, voiceChannelId, interaction.client);
+        setupEmptyCheck(guildId, voiceChannelId, interaction.client);
         
         return true;
     } catch (error) {
@@ -276,7 +288,7 @@ async function playRadio(interaction, country, radioIndex) {
     }
 }
 
-async function stopRadio(guildId, interaction) {
+async function stopRadio(guildId, interaction, skipMessage = false) {
     try {
         const player = players.get(guildId);
         if (player) {
@@ -301,12 +313,13 @@ async function stopRadio(guildId, interaction) {
             radioMessages.delete(guildId);
         }
         
-        if (disconnectTimers.has(guildId)) {
-            clearInterval(disconnectTimers.get(guildId));
-            disconnectTimers.delete(guildId);
+        // Limpar timeout se existir
+        if (voiceTimeouts.has(guildId)) {
+            clearTimeout(voiceTimeouts.get(guildId));
+            voiceTimeouts.delete(guildId);
         }
         
-        if (interaction) {
+        if (interaction && !skipMessage) {
             await interaction.followUp({
                 content: '✅ Rádio desconectada com sucesso!',
                 flags: 'Ephemeral'
@@ -317,7 +330,7 @@ async function stopRadio(guildId, interaction) {
     } catch (error) {
         console.error('Erro ao desconectar rádio:', error);
         
-        if (interaction) {
+        if (interaction && !skipMessage) {
             await interaction.followUp({
                 content: `❌ Erro ao desconectar rádio: ${error.message}`,
                 flags: 'Ephemeral'
@@ -388,7 +401,7 @@ async function navigateRadios(interaction, direction) {
 async function checkRadioPermissions(interaction) {
     const isDj = await hasDjRole(interaction.member);
     if (!isDj) {
-        await interaction.reply({
+        await interaction.editReply({
             content: '❌ Você precisa ter o cargo de DJ para usar este comando.',
             flags: 'Ephemeral'
         });
@@ -397,7 +410,7 @@ async function checkRadioPermissions(interaction) {
     
     const channels = await getChannels(interaction.guild.id);
     if (!channels) {
-        await interaction.reply({
+        await interaction.editReply({
             content: '❌ Configuração de canais não encontrada.',
             flags: 'Ephemeral'
         });
@@ -405,7 +418,7 @@ async function checkRadioPermissions(interaction) {
     }
     
     if (!channels.botChannelId) {
-        await interaction.reply({
+        await interaction.editReply({
             content: '❌ O canal "bot" não foi encontrado na configuração.',
             flags: 'Ephemeral'
         });
@@ -413,7 +426,7 @@ async function checkRadioPermissions(interaction) {
     }
     
     if (interaction.channel.id !== channels.botChannelId) {
-        await interaction.reply({
+        await interaction.editReply({
             content: `❌ Este comando só pode ser usado no canal <#${channels.botChannelId}>.`,
             flags: 'Ephemeral'
         });
@@ -421,7 +434,7 @@ async function checkRadioPermissions(interaction) {
     }
     
     if (!interaction.member.voice.channel) {
-        await interaction.reply({
+        await interaction.editReply({
             content: '❌ Você precisa estar em um canal de voz para usar este comando.',
             flags: 'Ephemeral'
         });
@@ -433,7 +446,7 @@ async function checkRadioPermissions(interaction) {
         radioOwners.has(guildId) && 
         radioOwners.get(guildId) !== interaction.user.id) {
         
-        await interaction.reply({
+        await interaction.editReply({
             content: `❌ Apenas <@${radioOwners.get(guildId)}> pode controlar a rádio nesta sessão.`,
             flags: 'Ephemeral'
         });
@@ -629,5 +642,7 @@ module.exports = {
                 flags: 'Ephemeral'
             });
         }
-    }
+    },
+
+    handleVoiceStateUpdate // Exportar o handler para ser usado no index.js
 };

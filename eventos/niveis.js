@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { gerarCorAleatoria } = require('../configuracoes/randomColor');
+const { gerarCorAleatoria } = require('../configuracoes/randomColor.js');
 const database = require('../configuracoes/mongodb.js');
 const { criarBarraProgresso } = require('../configuracoes/barraProgresso.js');
 const economia = require('../configuracoes/economia.js');

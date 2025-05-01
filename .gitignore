@@ -80,3 +80,6 @@ dist
 
 # Git
 .gitignore
+
+#Pastas
+scripts

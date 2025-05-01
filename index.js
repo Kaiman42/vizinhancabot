@@ -91,11 +91,9 @@ function loadCommands(dir) {
             loadCommands(fullPath);
         } else if (file.name.endsWith('.js')) {
             try {
-                console.log(`Carregando comando: ${fullPath}`);
                 const command = require(fullPath);
                 if (command.data && typeof command.data.toJSON === 'function') {
                     const commandData = command.data.toJSON();
-                    console.log(`Comando carregado com sucesso: ${commandData.name}`);
                     commands.push({
                         ...commandData,
                         execute: command.execute,
@@ -112,12 +110,10 @@ function loadCommands(dir) {
 
 async function registerCommands() {
     try {
-        console.log('Iniciando o registro de comandos de barra...');
         await rest.put(
             Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands },
         );
-        console.log('Comandos registrados ou atualizados com sucesso!');
     } catch (error) {
         console.error('Erro ao registrar comandos:', error);
     }
@@ -136,44 +132,20 @@ async function setupDatabase() {
         };
         
         global.ignisContext = ignis;
-        console.log('Contexto ignis disponibilizado globalmente');
         
         // Inicializar todas as coleções do sistema
         await mongodb.initializeCollections();
-        console.log('Coleções do banco de dados inicializadas com sucesso!');
-        
-        // Inserir documento de canais
-        try {
-            const canaisFile = path.join(__dirname, 'configuracoes/canais-config.json');
-            if (fs.existsSync(canaisFile)) {
-                const canaisData = JSON.parse(fs.readFileSync(canaisFile, 'utf8'));
-                await mongodb.upsert(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'canais' }, { $set: canaisData });
-                console.log('Verificação do documento "canais" concluída.');
-            } else {
-                console.log('Arquivo de configuração de canais não encontrado. Pulando atualização.');
-            }
-        } catch (error) {
-            console.error('Erro ao inserir documento de canais:', error);
-        }
         
         //const niveisModule = require('./eventos/niveis');
-        const registroMembroModule = require('./eventos/registroMembro');
-        const registroServerModule = require('./eventos/registroServer');
-        const boasVindasModule = require('./eventos/boas-vindas');
-        const economiaModule = require('./configuracoes/economia');
+        const registroMembroModule = require('./eventos/registroMembro.js');
+        const registroServerModule = require('./eventos/registroServer.js');
+        const boasVindasModule = require('./eventos/boas-vindas.js');
+        const economiaModule = require('./configuracoes/economia.js');
         
         await registroMembroModule.initialize(botClient, ignis);
-        console.log('Sistema de monitoramento de membros inicializado com sucesso!');
-        
         await registroServerModule.initialize(botClient, ignis);
-        console.log('Sistema de monitoramento de eventos do servidor inicializado com sucesso!');
-        
         await boasVindasModule.initialize(botClient, ignis);
-        console.log('Sistema de boas-vindas inicializado com sucesso!');
-        
-        // Inicializar sistema de economia
         await economiaModule.inicializarEconomia();
-        console.log('Sistema de economia inicializado com sucesso!');
         
         //if (niveisModule.utils && typeof niveisModule.utils.initializeCollections === 'function') {
             //await niveisModule.utils.initializeCollections(ignis);
@@ -185,7 +157,6 @@ async function setupDatabase() {
         global.cooldowns = new Map();
         global.voiceJoinTimes = new Map();
         
-        console.log('Sistema de níveis inicializado com sucesso!');
         return ignis;
     } catch (error) {
         console.error('Erro ao configurar o banco de dados:', error);
@@ -232,6 +203,17 @@ function setupEventListeners() {
         //}
    // });
     
+    botClient.on('voiceStateUpdate', async (oldState, newState) => {
+        try {
+            const radioModule = require('./comandos/misc/radio');
+            if (radioModule.handleVoiceStateUpdate) {
+                await radioModule.handleVoiceStateUpdate(oldState, newState);
+            }
+        } catch (error) {
+            console.error('Erro ao processar mudança de estado de voz:', error);
+        }
+    });
+
     process.on('unhandledRejection', (error) => {
         if (error && error.code === 10008) {
             console.warn('Aviso: Tentativa de interagir com uma mensagem que não existe mais');

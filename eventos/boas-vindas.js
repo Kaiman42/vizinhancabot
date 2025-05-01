@@ -1,80 +1,49 @@
 const { EmbedBuilder } = require('discord.js');
-const { gerarCorAleatoria } = require('../configuracoes/randomColor');
-const database = require('../configuracoes/mongodb');
+const { gerarCorAleatoria } = require('../configuracoes/randomColor.js');
+const database = require('../configuracoes/mongodb.js');
 
-// Inicialização do módulo
 async function initialize(client, ignisContext) {
   try {
-    // Configurar o manipulador de eventos para novos membros
     setupWelcomeHandler(client, ignisContext);
-    console.log('Módulo de boas-vindas inicializado com sucesso!');
   } catch (error) {
     console.error('Erro ao inicializar módulo de boas-vindas:', error);
   }
 }
 
 function setupWelcomeHandler(client, ignisContext) {
-  // Evento acionado quando um membro completa o onboarding (recebe todas as roles do servidor)
   client.on('guildMemberUpdate', async (oldMember, newMember) => {
     try {
-      // Ignorar bots
       if (newMember.user.bot) return;
-      
-      // Verificar se o membro completou o processo de onboarding
-      // Isso pode ser detectado verificando se as roles do membro mudaram
-      // e se agora ele tem a role específica que é concedida após o onboarding
-      
-      // Se o membro não tinha roles antes e agora tem, ou se as roles aumentaram
-      const hadRolesBefore = oldMember.roles.cache.size > 1; // > 1 porque @everyone é uma role
+
+      const hadRolesBefore = oldMember.roles.cache.size > 1;
       const hasRolesNow = newMember.roles.cache.size > 1;
-      
-      // Se o membro já tinha roles ou não adquiriu novas roles, não considerar como onboarding concluído
       if (hadRolesBefore || !hasRolesNow) return;
-      
-      // Verificar se o usuário está na lista de evitar_spam
+
       const userId = newMember.user.id;
-      const evitarSpam = await verificarUsuarioEmEvitarSpam(userId);
-      
-      // Se o usuário estiver na lista de evitar_spam, não envia a mensagem de boas-vindas
-      if (evitarSpam) {
-        console.log(`Usuário ${newMember.user.tag} (${userId}) está na lista de evitar_spam. Mensagem de boas-vindas não enviada.`);
-        return;
-      }
-      
-      // Buscar o canal de boas-vindas
+      if (await verificarUsuarioEmEvitarSpam(userId)) return;
+
       const welcomeChannel = await findWelcomeChannel(newMember.guild, ignisContext);
-      if (!welcomeChannel) {
-        console.log(`Canal de boas-vindas não encontrado para o servidor ${newMember.guild.name}`);
-        return;
-      }
-      
-      // Criar a embed de boas-vindas
+      if (!welcomeChannel) return;
+
       const embed = createWelcomeEmbed(newMember);
-      
-      // Enviar a mensagem de boas-vindas
       const welcomeMessage = await welcomeChannel.send({ 
         content: `<@${newMember.id}>`,
         embeds: [embed]
       });
-      
-      // Adicionar o usuário à lista de evitar_spam
+
       await adicionarUsuarioEmEvitarSpam(userId);
-      
-      // Configurar a exclusão da mensagem após 1 minuto
+
       setTimeout(() => {
         welcomeMessage.delete().catch(error => 
           console.error('Não foi possível excluir a mensagem de boas-vindas:', error)
         );
-      }, 60 * 1000); // 1 minuto em milissegundos
-      
-      console.log(`Mensagem de boas-vindas enviada para ${newMember.user.tag}`);
+      }, 60 * 1000);
     } catch (error) {
       console.error('Erro ao enviar mensagem de boas-vindas após onboarding:', error);
     }
   });
 }
 
-// Função para criar a embed de boas-vindas
 function createWelcomeEmbed(member) {
   return new EmbedBuilder()
     .setColor(gerarCorAleatoria())
@@ -100,36 +69,20 @@ function createWelcomeEmbed(member) {
     .setTimestamp();
 }
 
-// Função para encontrar o canal de boas-vindas
 async function findWelcomeChannel(guild, ignisContext) {
   try {
-    // Buscar a configuração de canais no MongoDB
     const canalConfig = await database.findOne(database.COLLECTIONS.CONFIGURACOES, { _id: 'canais' });
-    
-    if (!canalConfig || !canalConfig.categorias) {
-      console.log('Configuração de canais não encontrada');
-      return null;
-    }
-    
-    // Procurar o canal de boas-vindas (geralmente conversas-gerais ou boas-vindas)
+    if (!canalConfig?.categorias) return null;
+
     for (const categoria of canalConfig.categorias) {
       if (!categoria.canais) continue;
-      
-      // Primeiro procura um canal específico "boas-vindas"
-      let canal = categoria.canais.find(c => c.nome === 'boas-vindas');
-      
-      // Se não encontrar, tenta o canal "conversas-gerais"
-      if (!canal) {
-        canal = categoria.canais.find(c => c.nome === 'conversas-gerais');
-      }
-      
-      // Se encontrou algum canal, retorna-o
+      let canal = categoria.canais.find(c => c.nome === 'boas-vindas') ||
+                  categoria.canais.find(c => c.nome === 'conversas-gerais');
       if (canal) {
-        return await guild.channels.fetch(canal.id).catch(() => null);
+        const channel = await guild.channels.fetch(canal.id).catch(() => null);
+        if (channel) return channel;
       }
     }
-    
-    // Se não encontrou nenhum canal adequado
     return null;
   } catch (error) {
     console.error('Erro ao buscar canal de boas-vindas:', error);
@@ -137,52 +90,33 @@ async function findWelcomeChannel(guild, ignisContext) {
   }
 }
 
-// Função para verificar se um usuário está na lista de evitar_spam
 async function verificarUsuarioEmEvitarSpam(userId) {
   try {
     const evitarSpamDoc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'evitar_spam' });
-    
-    // Se o documento não existir ou não tiver a propriedade usuarios, o usuário não está na lista
-    if (!evitarSpamDoc || !evitarSpamDoc.usuarios) return false;
-    
-    // Verificar se o ID do usuário está na lista
-    return evitarSpamDoc.usuarios.some(user => user.userId === userId);
+    return evitarSpamDoc?.usuarios?.some(user => user.userId === userId) || false;
   } catch (error) {
     console.error(`Erro ao verificar usuário ${userId} na lista de evitar_spam:`, error);
-    return false; // Em caso de erro, assume que o usuário não está na lista
+    return false;
   }
 }
 
-// Função para adicionar um usuário à lista de evitar_spam
 async function adicionarUsuarioEmEvitarSpam(userId) {
   try {
     const evitarSpamDoc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'evitar_spam' });
-    
-    // Se o documento não existir ou não tiver a propriedade usuarios, inicialize-a
-    if (!evitarSpamDoc || !evitarSpamDoc.usuarios) {
+    if (!evitarSpamDoc?.usuarios) {
       await database.upsert(
         database.COLLECTIONS.DADOS_USUARIOS,
         { _id: 'evitar_spam' },
         { $set: { usuarios: [{ userId }] } }
       );
-      console.log(`Usuário ${userId} adicionado à nova lista de evitar_spam`);
       return true;
     }
-    
-    // Verificar se o usuário já está na lista
-    if (evitarSpamDoc.usuarios.some(user => user.userId === userId)) {
-      console.log(`Usuário ${userId} já está na lista de evitar_spam`);
-      return false;
-    }
-    
-    // Adicionar o usuário à lista
+    if (evitarSpamDoc.usuarios.some(user => user.userId === userId)) return false;
     await database.updateOne(
       database.COLLECTIONS.DADOS_USUARIOS,
       { _id: 'evitar_spam' },
       { $push: { usuarios: { userId } } }
     );
-    
-    console.log(`Usuário ${userId} adicionado à lista de evitar_spam`);
     return true;
   } catch (error) {
     console.error(`Erro ao adicionar usuário ${userId} à lista de evitar_spam:`, error);

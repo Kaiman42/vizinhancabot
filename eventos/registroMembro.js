@@ -15,7 +15,6 @@ async function initialize(client, ignisContext) {
         
         setupEventHandlers(client, configuracoesCollection);
         
-        console.log('Módulo de registro de membros inicializado com sucesso!');
     } catch (error) {
         console.error('Erro ao inicializar módulo de registro de membros:', error);
     }
@@ -289,49 +288,6 @@ async function handleMemberJoin(member, configCollection) {
     }
 }
 
-async function checkInvitesDisabled(member) {
-    try {
-        const mongoClient = new MongoClient(process.env.MONGO_URI);
-        await mongoClient.connect();
-        const db = mongoClient.db('ignis');
-        const configCollection = db.collection('serverConfigs');
-        
-        const serverConfig = await configCollection.findOne({ guildId: member.guild.id });
-        
-        if (serverConfig?.convitesAtivos === false) {
-            console.log(`Membro ${member.user.tag} foi removido porque os convites estão desativados.`);
-            
-            await member.send({
-                content: `Olá! Infelizmente, o servidor **${member.guild.name}** está temporariamente fechado para novos membros. Por favor, tente entrar novamente mais tarde.`
-            }).catch(() => console.log(`Não foi possível enviar DM para ${member.user.tag}`));
-            
-            await member.kick('Convites estão temporariamente desativados');
-            
-            const userLogChannel = await findUserLogChannel(configCollection, member.guild.id);
-            if (userLogChannel) {
-                const embed = new EmbedBuilder()
-                    .setTitle('Entrada Bloqueada')
-                    .setColor(COLORS.NEGATIVE)
-                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-                    .setDescription(`<@${member.id}> (${member.user.tag}) tentou entrar no servidor, mas foi removido pois os convites estão desativados.`)
-                    .setFooter({ text: `ID do usuário: ${member.id}` })
-                    .setTimestamp();
-                
-                await userLogChannel.send({ embeds: [embed] });
-            }
-            
-            await mongoClient.close();
-            return true;
-        }
-        
-        await mongoClient.close();
-        return false;
-    } catch (error) {
-        console.error('Erro ao verificar status dos convites:', error);
-        return false;
-    }
-}
-
 async function handleMemberLeave(member, configCollection) {
     const userLogChannel = await findUserLogChannel(configCollection, member.guild.id);
     if (!userLogChannel) return;
@@ -423,7 +379,6 @@ async function findUserLogChannel(configCollection, guildId) {
         // Buscar o documento de canais na coleção de configurações
         const channelConfig = await configCollection.findOne({ _id: 'canais' });
         if (!channelConfig || !channelConfig.categorias) {
-            console.log('Documento de canais não encontrado ou sem categorias');
             return null;
         }
         
@@ -453,22 +408,11 @@ async function findUserLogChannel(configCollection, guildId) {
             }
         }
         
-        if (!userLogChannelId) {
-            console.log('Canal de logs não encontrado em nenhuma categoria');
-            return null;
-        }
-        
         // Buscar o canal no Discord
         const guild = await global.ignisContext.client.guilds.fetch(guildId);
         const logChannel = await guild.channels.fetch(userLogChannelId);
-        
-        if (!logChannel) {
-            console.log(`Canal com ID ${userLogChannelId} não encontrado no Discord`);
-            return null;
-        }
-        
-        console.log(`Canal de logs encontrado: ${logChannel.name} (${userLogChannelId})`);
         return logChannel;
+        
     } catch (error) {
         console.error('Erro ao buscar canal de log:', error);
         return null;

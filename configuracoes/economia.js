@@ -17,7 +17,6 @@ async function inicializarEconomia() {
       { $setOnInsert: { usuarios: [] } }
     );
 
-    console.log('Sistema de economias inicializado com sucesso!');
     return true;
   } catch (error) {
     console.error('Erro ao inicializar o sistema de economias:', error);

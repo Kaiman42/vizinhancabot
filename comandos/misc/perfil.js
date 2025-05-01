@@ -15,6 +15,30 @@ module.exports = {
                 .setRequired(false)),
 
     async execute(interaction, ignis) {
+        // Verificar cooldown
+        const userId = interaction.user.id;
+        const cooldownKey = `perfil_${userId}`;
+        const cooldownAmount = 60000; // 1 minuto em milissegundos
+
+        if (!global.cooldowns) {
+            global.cooldowns = new Map();
+        }
+
+        if (global.cooldowns.has(cooldownKey)) {
+            const expirationTime = global.cooldowns.get(cooldownKey);
+            if (Date.now() < expirationTime) {
+                const timeLeft = (expirationTime - Date.now()) / 1000;
+                return interaction.reply({ 
+                    content: `⏰ Por favor, aguarde ${timeLeft.toFixed(1)} segundos antes de usar o comando novamente.`,
+                    flags: 'Ephemeral' 
+                });
+            }
+        }
+
+        // Definir o cooldown
+        global.cooldowns.set(cooldownKey, Date.now() + cooldownAmount);
+        setTimeout(() => global.cooldowns.delete(cooldownKey), cooldownAmount);
+
         await interaction.deferReply();
         
         const targetUser = interaction.options.getUser('usuario') || interaction.user;
@@ -68,8 +92,9 @@ module.exports = {
         let progressPercentage = 0;
         let progressBar = '';
         let cargoNome = 'Nenhum';
-        let corUsuario = 'Nenhuma cor selecionada';
+        let rankDisplay = 'Nenhum';
         
+        // Sistema de níveis
         if (ignis && ignis.database) {
             const mainDoc = await ignis.database.collection('dadosUsuarios').findOne({ _id: 'niveis' });
             const niveis = require('../../eventos/niveis');
@@ -77,7 +102,7 @@ module.exports = {
             if (mainDoc && mainDoc.users && Array.isArray(mainDoc.users)) {
                 const userData = mainDoc.users.find(user => user.userId === targetUser.id);
                 
-                if (userData) {
+                if (userData && (userData.level > 0 || userData.xp > 0)) {
                     currentLevel = userData.level || 0;
                     currentXP = userData.xp || 0;
                     xpForNextLevel = niveis.utils.calculateRequiredXP(currentLevel);
@@ -85,6 +110,7 @@ module.exports = {
                     const barraProgresso = criarBarraProgressoXP(currentXP, xpForNextLevel);
                     progressBar = barraProgresso.barra;
                     progressPercentage = barraProgresso.progresso;
+                    rankDisplay = `Nível ${currentLevel} (${progressPercentage}%)\n\`${progressBar}\``;
                     
                     const patentesDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'patentes' });
                     
@@ -103,34 +129,28 @@ module.exports = {
                             cargoNome = `<@&${cargoNivelApropriado.id}>`;
                         }
                     }
-                    
-                    const coresDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'cores' });
-                    if (coresDoc && coresDoc.roles) {
-                        const cargosDeCor = [];
-                        
-                        for (const categoria in coresDoc.roles) {
-                            for (const cor in coresDoc.roles[categoria]) {
-                                const cargoInfo = coresDoc.roles[categoria][cor];
-                                if (cargoInfo && cargoInfo.id) {
-                                    cargosDeCor.push({
-                                        id: cargoInfo.id,
-                                        nome: `${cor} (${categoria})`,
-                                        hex: cargoInfo.hex
-                                    });
-                                }
-                            }
-                        }
-                        
-                        const corDoUsuario = cargosDeCor.find(cargo => member.roles.cache.has(cargo.id));
-                        
-                        if (corDoUsuario) {
-                            corUsuario = `<@&${corDoUsuario.id}>`;
-                        } else {
-                            corUsuario = `Não selecionada\n       *Use /cor*`;
-                        }
-                    }
                 }
             }
+        }
+
+        // Sistema de cores - separado do sistema de níveis
+        let corUsuario = 'Nenhuma cor selecionada\n       *Use /cor*';
+        try {
+            const coresDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'cores' });
+            if (coresDoc?.roles) {
+                for (const categoria in coresDoc.roles) {
+                    const cores = coresDoc.roles[categoria];
+                    for (const corNome in cores) {
+                        if (cores[corNome].id && member.roles.cache.has(cores[corNome].id)) {
+                            corUsuario = `<@&${cores[corNome].id}>`;
+                            break;
+                        }
+                    }
+                    if (corUsuario !== 'Nenhuma cor selecionada\n       *Use /cor*') break;
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao buscar cores:', error);
         }
         
         const saldoGrama = await economia.obterSaldo(targetUser.id);
@@ -146,7 +166,7 @@ module.exports = {
                 { name: '📊 Status', value: `> ${status}`, inline: true },
                 { name: '💲 Grama', value: `> ${saldoGrama.toLocaleString('pt-BR')}`, inline: true },
                 { name: '🔰 Cargo de Rank', value: `> ${cargoNome}`, inline: true },
-                { name: '🏆 Rank', value: `> Nível ${currentLevel} (${progressPercentage}%)\n\`${progressBar}\``, inline: true },
+                { name: '🏆 Rank', value: `> ${rankDisplay}`, inline: true },
                 { name: '👑 Possui', value: `${userRoles}`, inline: true },
                 { name: '🎨 Cor', value: `> ${corUsuario}`, inline: true }
             )

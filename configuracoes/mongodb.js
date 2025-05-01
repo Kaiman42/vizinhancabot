@@ -1,8 +1,7 @@
 const COLLECTIONS = {
   DADOS_USUARIOS: 'dadosUsuarios',
   CONFIGURACOES: 'configuracoes',
-  TEMPORARIO: 'temporario',
-  TRIVIA: 'trivia'
+  TEMPORARIO: 'temporario'
 };
 
 function getCollection(collectionName) {
@@ -117,11 +116,10 @@ async function ensureCollection(collectionName, defaultDoc = null) {
     
     if (!collectionExists) {
       await db.createCollection(collectionName);
-      console.log(`Coleção ${collectionName} criada com sucesso`);
+
       
       if (defaultDoc) {
         await insertOne(collectionName, defaultDoc);
-        console.log(`Documento padrão inserido em ${collectionName}`);
       }
     }
     
@@ -150,20 +148,6 @@ async function initializeCollections() {
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'patentes' }, { $setOnInsert: { _id: 'patentes' } });
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'canais' }, { $setOnInsert: { _id: 'canais' } });
 
-    // Iniciando coleção miniGame e seus documentos
-    await ensureCollection(COLLECTIONS.TRIVIA);
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'general_knowledge' }, { $setOnInsert: { _id: 'general_knowledge' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'arts_and_literature' }, { $setOnInsert: { _id: 'arts_and_literature' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'film_and_tv' }, { $setOnInsert: { _id: 'film_and_tv' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'food_and_drink' }, { $setOnInsert: { _id: 'food_and_drink' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'geography' }, { $setOnInsert: { _id: 'geography' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'history' }, { $setOnInsert: { _id: 'history' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'music' }, { $setOnInsert: { _id: 'music' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'science' }, { $setOnInsert: { _id: 'science' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'society_and_culture' }, { $setOnInsert: { _id: 'society_and_culture' } });
-    await upsert(COLLECTIONS.TRIVIA, { _id: 'sport_and_leisure' }, { $setOnInsert: { _id: 'sport_and_leisure' } });
-
-    console.log('Todas as coleções foram inicializadas com sucesso');
     return true;
   } catch (error) {
     console.error('Erro ao inicializar coleções:', error);

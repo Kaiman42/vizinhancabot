@@ -1,7 +1,9 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const { EmbedBuilder } = require('discord.js');
-const economia = require('../../configuracoes/economia');
-const { gerarCorAleatoria } = require('../../configuracoes/randomColor');
+const economia = require('../../configuracoes/economia.js');
+const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
+const mongodb = require('../../configuracoes/mongodb.js');
+const { criarBarraProgresso } = require('../../configuracoes/barraProgresso.js');
 
 const MIN_VALOR = 42;
 const MAX_VALOR = 2042;
@@ -41,11 +43,19 @@ module.exports = {
                     
                 return interaction.editReply({ embeds: [embed] });
             }
+
+            // Criar barra de progresso
+            const barraProgresso = criarBarraProgresso(valorRecompensa, MAX_VALOR, {
+                comprimento: 15,
+                caracterPreenchido: '■',
+                caracterVazio: '□',
+                incluirPorcentagem: true
+            });
             
             const embed = new EmbedBuilder()
                 .setColor(gerarCorAleatoria())
                 .setTitle('💰 Recompensa Diária!')
-                .setDescription(`Você recebeu **${valorRecompensa.toLocaleString('pt-BR')} Gramas** hoje!`)
+                .setDescription(`Você recebeu **${valorRecompensa.toLocaleString('pt-BR')} Gramas** hoje!\n\n\`${barraProgresso.barra}\`\n*${valorRecompensa} de ${MAX_VALOR} Gramas possíveis*`)
                 .setFooter({ text: 'Volte amanhã para mais recompensas!' })
                 .setTimestamp();
                 
@@ -86,7 +96,6 @@ async function receberRecompensaDiaria(userId, valorRecompensa) {
 }
 
 async function findUsuarioById(userId) {
-    const mongodb = require('../../configuracoes/mongodb');
     const doc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' });
     
     if (!doc || !doc.usuarios) {
@@ -97,8 +106,6 @@ async function findUsuarioById(userId) {
 }
 
 async function atualizarUltimoDailyUsuario(userId) {
-    const mongodb = require('../../configuracoes/mongodb.js');
-    
     await mongodb.updateOne(
         mongodb.COLLECTIONS.DADOS_USUARIOS,
         { _id: 'economias', 'usuarios.userId': userId },

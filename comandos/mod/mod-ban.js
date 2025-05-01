@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const mongodb = require('../../configuracoes/mongodb');
+const mongodb = require('../../configuracoes/mongodb.js');
 
 module.exports = {
     data: new SlashCommandBuilder()

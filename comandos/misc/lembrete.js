@@ -2,13 +2,30 @@ const { SlashCommandBuilder } = require('discord.js');
 const { MongoClient } = require('mongodb');
 
 const uri = process.env.MONGO_URI;
+const lembretesTotal = 3;
+
+function formatTimeString(timeString) {
+    // Remove any colons if present
+    timeString = timeString.replace(':', '');
+    
+    // Add colon if it's a 4-digit format
+    if (timeString.length === 4) {
+        return timeString.substring(0, 2) + ':' + timeString.substring(2, 4);
+    }
+    return timeString;
+}
 
 function isValidTimeFormat(timeString) {
-    return /^\d{2}:\d{2}$/.test(timeString) && 
-           parseInt(timeString.split(':')[0]) >= 0 && 
-           parseInt(timeString.split(':')[0]) <= 23 && 
-           parseInt(timeString.split(':')[1]) >= 0 && 
-           parseInt(timeString.split(':')[1]) <= 59;
+    // Format the time string first
+    timeString = formatTimeString(timeString);
+    
+    // Check if it matches HH:MM format
+    if (!/^\d{2}:\d{2}$/.test(timeString)) {
+        return false;
+    }
+    
+    const [hours, minutes] = timeString.split(':').map(num => parseInt(num));
+    return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 }
 
 function calculateReminderTime(timeString) {
@@ -24,7 +41,7 @@ module.exports = {
         .setDescription('Cria um lembrete.')
         .addStringOption(option =>
             option.setName('hora')
-                .setDescription('Hora e minutos no formato HH:MM (exemplo: 14:30)')
+                .setDescription('Hora e minutos no formato HH:MM ou HHMM (exemplo: 14:30 ou 1430)')
                 .setRequired(true))
         .addStringOption(option =>
             option.setName('conteudo')
@@ -32,7 +49,7 @@ module.exports = {
                 .setRequired(true)),
 
     async execute(interaction) {
-        const hora = interaction.options.getString('hora');
+        const hora = formatTimeString(interaction.options.getString('hora'));
         const conteudo = interaction.options.getString('conteudo');
 
         if (!isValidTimeFormat(hora)) {
@@ -54,7 +71,20 @@ module.exports = {
         try {
             await client.connect();
             const db = client.db('ignis');
-            const remindersCollection = db.collection('reminders');
+            const temporario = db.collection('temporario');
+
+            // Verificar número de lembretes ativos do usuário
+            const activeReminders = await temporario.countDocuments({
+                userId: interaction.user.id
+            });
+
+            if (activeReminders >= lembretesTotal) {
+                await client.close();
+                return interaction.reply({ 
+                    content: `Você já possui ${lembretesTotal} lembretes ativos. Aguarde algum ser concluído antes de criar outro.`, 
+                    flags: 'Ephemeral' 
+                });
+            }
 
             const now = new Date();
             const reminderTime = calculateReminderTime(hora);
@@ -63,6 +93,20 @@ module.exports = {
                 await client.close();
                 return interaction.reply({ 
                     content: 'O horário do lembrete deve ser no futuro.', 
+                    flags: 'Ephemeral' 
+                });
+            }
+
+            // Verificar se já existe um lembrete para o mesmo horário
+            const existingReminder = await temporario.findOne({
+                userId: interaction.user.id,
+                hora: hora
+            });
+
+            if (existingReminder) {
+                await client.close();
+                return interaction.reply({ 
+                    content: 'Você já possui um lembrete agendado para este horário exato.', 
                     flags: 'Ephemeral' 
                 });
             }
@@ -76,7 +120,7 @@ module.exports = {
                 scheduledFor: reminderTime
             };
 
-            const result = await remindersCollection.insertOne(reminder);
+            const result = await temporario.insertOne(reminder);
 
             const delay = reminderTime.getTime() - now.getTime();
 
@@ -96,7 +140,7 @@ module.exports = {
                     const reminderClient = new MongoClient(uri);
                     await reminderClient.connect();
                     const reminderDb = reminderClient.db('ignis');
-                    const reminderCollection = reminderDb.collection('reminders');
+                    const reminderCollection = reminderDb.collection('temporario');
                     
                     // Remove o lembrete do banco de dados
                     await reminderCollection.deleteOne({ _id: reminderId });

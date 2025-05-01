@@ -17,7 +17,7 @@ module.exports = {
                 .setRequired(true)
                 .setMinValue(1)),
                 
-    async execute(interaction, ignis) {
+    async execute(interaction) {
         await interaction.deferReply();
         
         try {

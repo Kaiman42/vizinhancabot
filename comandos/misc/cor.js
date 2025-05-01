@@ -1,5 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
-const { getCollection } = require('../../configuracoes/mongodb');
+const { getCollection } = require('../../configuracoes/mongodb.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -146,9 +146,10 @@ module.exports = {
                     
                     const cargo = interaction.guild.roles.cache.get(cargoId);
                     if (!cargo) {
-                        return btnInteraction.followUp({
+                        return interaction.editReply({
                             content: `❌ O cargo com ID ${cargoId} não foi encontrado.`,
-                            ephemeral: true
+                            embeds: [],
+                            components: []
                         });
                     }
                     
@@ -159,15 +160,23 @@ module.exports = {
                     
                     await member.roles.add(cargo);
                     
-                    await btnInteraction.followUp({
-                        content: `✅ Cor **${formatarNome(cor.nome)}** definida com sucesso!`,
-                        ephemeral: true
+                    // Edita a mensagem principal para mostrar sucesso e a cor escolhida
+                    await interaction.editReply({
+                        embeds: [
+                            new EmbedBuilder()
+                                .setTitle(`✅ Cor alterada com sucesso!`)
+                                .setDescription(`Sua cor agora é **${formatarNome(cor.nome)}**.`)
+                                .setColor(cor.hex)
+                                .setThumbnail(`https://singlecolorimage.com/get/${cor.hex.replace('#', '')}/200x200`)
+                        ],
+                        components: []
                     });
                 } catch (error) {
                     console.error('Erro ao definir cor:', error);
-                    await btnInteraction.followUp({
+                    await interaction.editReply({
                         content: '❌ Ocorreu um erro ao definir a cor. Tente novamente mais tarde.',
-                        ephemeral: true
+                        embeds: [],
+                        components: []
                     });
                 }
             };
@@ -179,13 +188,13 @@ module.exports = {
                 const botoesPaleta = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId('paleta_anterior')
-                        .setLabel('◀️ Paleta Anterior')
+                        .setLabel('◀️')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(state.paletaAtual === 0),
                     
                     new ButtonBuilder()
                         .setCustomId('paleta_proxima')
-                        .setLabel('Próxima Paleta ▶️')
+                        .setLabel('▶️')
                         .setStyle(ButtonStyle.Primary)
                         .setDisabled(state.paletaAtual === paletas.length - 1)
                 );
@@ -193,21 +202,21 @@ module.exports = {
                 const botoesCor = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId('cor_anterior')
-                        .setLabel('⬅️ Cor Anterior')
+                        .setLabel('⬅️')
                         .setStyle(ButtonStyle.Secondary)
                         .setDisabled(state.corAtual === 0),
                     
-                    new ButtonBuilder()
-                        .setCustomId('definir_cor')
-                        .setLabel('✨ Escolher Esta Cor')
-                        .setStyle(ButtonStyle.Success),
-                    
-                    new ButtonBuilder()
+                        new ButtonBuilder()
                         .setCustomId('cor_proxima')
-                        .setLabel('Próxima Cor ➡️')
+                        .setLabel('➡️')
                         .setStyle(ButtonStyle.Secondary)
-                        .setDisabled(state.corAtual === corNomes.length - 1)
-                );
+                        .setDisabled(state.corAtual === corNomes.length - 1),
+
+                        new ButtonBuilder()
+                        .setCustomId('definir_cor')
+                        .setLabel('✨')
+                        .setStyle(ButtonStyle.Success)
+                    );
                 
                 return [botoesPaleta, botoesCor];
             };
