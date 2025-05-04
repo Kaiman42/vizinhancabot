@@ -1,20 +1,18 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { EmbedBuilder } = require('discord.js');
-const economia = require('../../configuracoes/economia/index.js');
-const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
-const mongodb = require('../../configuracoes/mongodb.js');
 const { criarBarraProgresso } = require('../../configuracoes/barraProgresso.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const economia = require('../../configuracoes/economia/index.js');
+const mongodb = require('../../configuracoes/mongodb.js');
 
-const MIN_VALOR = 42;
-const MAX_VALOR = 2042;
-const FAIXA_INTERVALO = Math.floor((MAX_VALOR - MIN_VALOR) / 3);
+const min = 42;
+const maximo = 2042;
+const intervalo = Math.floor((maximo - min) / 3);
 
-const FAIXA_BAIXA_MIN = MIN_VALOR;
-const FAIXA_BAIXA_MAX = MIN_VALOR + FAIXA_INTERVALO;
-const FAIXA_MEDIA_MIN = FAIXA_BAIXA_MAX + 1;
-const FAIXA_MEDIA_MAX = FAIXA_MEDIA_MIN + FAIXA_INTERVALO;
-const FAIXA_ALTA_MIN = FAIXA_MEDIA_MAX + 1;
-const FAIXA_ALTA_MAX = MAX_VALOR;
+const baixoMin = min;
+const baixoMax = min + intervalo;
+const medioMin = baixoMax + 1;
+const medioMax = medioMin + intervalo;
+const altoMin = medioMax + 1;
+const altoMax = maximo;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -45,7 +43,7 @@ module.exports = {
             }
 
             // Criar barra de progresso
-            const barraProgresso = criarBarraProgresso(valorRecompensa, MAX_VALOR, {
+            const barraProgresso = criarBarraProgresso(valorRecompensa, maximo, {
                 comprimento: 15,
                 caracterPreenchido: '■',
                 caracterVazio: '□',
@@ -55,7 +53,7 @@ module.exports = {
             const embed = new EmbedBuilder()
                 .setColor(gerarCorAleatoria())
                 .setTitle('💰 Recompensa Diária!')
-                .setDescription(`Você recebeu **${valorRecompensa.toLocaleString('pt-BR')} Gramas** hoje!\n\n\`${barraProgresso.barra}\`\n*${valorRecompensa} de ${MAX_VALOR} Gramas possíveis*`)
+                .setDescription(`Você recebeu **${valorRecompensa.toLocaleString('pt-BR')} Gramas** hoje!\n\n\`${barraProgresso.barra}\`\n*${valorRecompensa} de ${maximo} Gramas possíveis*`)
                 .setFooter({ text: 'Volte amanhã para mais recompensas!' })
                 .setTimestamp();
                 
@@ -114,13 +112,13 @@ async function atualizarUltimoDailyUsuario(userId) {
 }
 
 function calcularRecompensa() {
-    const valorInicial = Math.floor(Math.random() * (MAX_VALOR - MIN_VALOR + 1)) + MIN_VALOR;
+    const valorInicial = Math.floor(Math.random() * (maximo - min + 1)) + min;
     
-    if (valorInicial >= FAIXA_BAIXA_MIN && valorInicial <= FAIXA_BAIXA_MAX) {
+    if (valorInicial >= baixoMin && valorInicial <= baixoMax) {
         return valorInicial;
-    } else if (valorInicial >= FAIXA_MEDIA_MIN && valorInicial <= FAIXA_MEDIA_MAX) {
-        return Math.floor(Math.random() * (MAX_VALOR - MIN_VALOR + 1)) + MIN_VALOR;
+    } else if (valorInicial >= medioMin && valorInicial <= medioMax) {
+        return Math.floor(Math.random() * (maximo - min + 1)) + min;
     } else {
-        return Math.floor(Math.random() * (FAIXA_ALTA_MAX - FAIXA_ALTA_MIN + 1)) + FAIXA_ALTA_MIN;
+        return Math.floor(Math.random() * (altoMax - altoMin + 1)) + altoMin;
     }
 }
