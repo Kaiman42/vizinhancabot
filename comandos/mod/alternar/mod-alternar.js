@@ -1,6 +1,5 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const { findOne, upsert } = require('../../configuracoes/mongodb');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { findOne, upsert } = require('../../../configuracoes/mongodb');
 const fs = require('fs');
 const path = require('path');
 
