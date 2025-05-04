@@ -88,18 +88,21 @@ function loadCommands(dir) {
     for (const file of files) {
         const fullPath = path.join(dir, file.name);
         if (file.isDirectory()) {
+            // Ignorar subpastas chamadas 'handler' (ou outras utilitárias)
+            if (file.name === 'handler') continue;
             loadCommands(fullPath);
         } else if (file.name.endsWith('.js')) {
             try {
                 const command = require(fullPath);
-                if (command.data && typeof command.data.toJSON === 'function') {
+                if (command.data && typeof command.data.toJSON === 'function' && typeof command.execute === 'function') {
                     const commandData = command.data.toJSON();
                     commands.push({
                         ...commandData,
                         execute: command.execute,
                     });
                 } else {
-                    console.warn(`O arquivo ${fullPath} não possui um comando válido.`);
+                    // Não avisar sobre arquivos utilitários/handlers
+                    // Apenas comandos válidos são registrados
                 }
             } catch (error) {
                 console.error(`Erro ao carregar comando de ${fullPath}:`, error);

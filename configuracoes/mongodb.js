@@ -1,7 +1,9 @@
 const COLLECTIONS = {
   DADOS_USUARIOS: 'dadosUsuarios',
   CONFIGURACOES: 'configuracoes',
-  TEMPORARIO: 'temporario'
+  TEMPORARIO: 'temporario',
+  LOJA: 'loja',
+  INVENTARIOS: 'inventarios'
 };
 
 function getCollection(collectionName) {
@@ -147,6 +149,14 @@ async function initializeCollections() {
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'escopos' }, { $setOnInsert: { _id: 'escopos' } });
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'patentes' }, { $setOnInsert: { _id: 'patentes' } });
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'canais' }, { $setOnInsert: { _id: 'canais' } });
+
+    // Iniciar coleção da loja
+    await ensureCollection(COLLECTIONS.LOJA);
+    // Inserir arquivos/seções vazias se não existirem
+    await upsert(COLLECTIONS.LOJA, { _id: 'armas' }, { $setOnInsert: { _id: 'armas' } });
+    await upsert(COLLECTIONS.LOJA, { _id: 'armaduras' }, { $setOnInsert: { _id: 'armaduras' } });
+    await upsert(COLLECTIONS.LOJA, { _id: 'consumiveis' }, { $setOnInsert: { _id: 'consumiveis' } });
+    await upsert(COLLECTIONS.LOJA, { _id: 'pocoes' }, { $setOnInsert: { _id: 'pocoes' } });
 
     return true;
   } catch (error) {
