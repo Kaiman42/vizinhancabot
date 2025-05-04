@@ -248,8 +248,7 @@ class DatabaseService {
         userId,
         username,
         level: newLevel,
-        guildId,
-        timestamp: new Date().toISOString()
+        guildId
       });
     } catch {
     }

@@ -2,7 +2,7 @@ const { SlashCommandBuilder } = require('@discordjs/builders');
 const { EmbedBuilder } = require('discord.js');
 const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
 const mongodb = require('../../configuracoes/mongodb.js');
-const economia = require('../../configuracoes/economia.js');
+const economia = require('../../configuracoes/economia/index.js');
 const { criarBarraProgressoXP } = require('../../configuracoes/barraProgresso.js');
 
 module.exports = {

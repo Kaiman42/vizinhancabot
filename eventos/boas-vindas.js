@@ -57,9 +57,7 @@ function createWelcomeEmbed(member) {
     .addFields(
       { 
         name: '📚 Comandos úteis para começar:', 
-        value: '• `/ajuda-canal` - Informações sobre canais\n' +
-               '• `/ajuda-parceria` - Como fazer parcerias\n' +
-               '• `/ajuda-regras` - Termos de convivência\n' +
+        value: '• `/ajuda-parceria` - Como fazer parcerias\n' +
                '• `/perfil` - Ver seu perfil\n' +
                '• `/cor` - Personalizar sua cor'
       }
