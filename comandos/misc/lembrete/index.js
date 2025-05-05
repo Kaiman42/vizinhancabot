@@ -1,8 +1,10 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { MongoClient } = require('mongodb');
+const { lembretesTotal, atingiuLimiteLembretes } = require('./limites');
+const { erros, responderErro } = require('./erros');
+const { logAcao, logErro } = require('./logs');
 
 const uri = process.env.MONGO_URI;
-const lembretesTotal = 3;
 
 function formatTimeString(timeString) {
     // Remove any colons if present
@@ -53,17 +55,11 @@ module.exports = {
         const conteudo = interaction.options.getString('conteudo');
 
         if (!isValidTimeFormat(hora)) {
-            return interaction.reply({ 
-                content: 'Formato de hora inválido. Use HH:MM (exemplo: 14:30).', 
-                flags: 'Ephemeral' 
-            });
+            return responderErro(interaction, erros.formatoHora);
         }
 
         if (conteudo.length > 512) {
-            return interaction.reply({ 
-                content: 'O conteúdo do lembrete deve ter no máximo 512 caracteres.', 
-                flags: 'Ephemeral' 
-            });
+            return responderErro(interaction, erros.conteudoLongo);
         }
 
         const client = new MongoClient(uri);
@@ -74,16 +70,9 @@ module.exports = {
             const temporario = db.collection('temporario');
 
             // Verificar número de lembretes ativos do usuário
-            const activeReminders = await temporario.countDocuments({
-                userId: interaction.user.id
-            });
-
-            if (activeReminders >= lembretesTotal) {
+            if (await atingiuLimiteLembretes(temporario, interaction.user.id)) {
                 await client.close();
-                return interaction.reply({ 
-                    content: `Você já possui ${lembretesTotal} lembretes ativos. Aguarde algum ser concluído antes de criar outro.`, 
-                    flags: 'Ephemeral' 
-                });
+                return responderErro(interaction, erros.limite(lembretesTotal));
             }
 
             const now = new Date();
@@ -91,10 +80,7 @@ module.exports = {
 
             if (reminderTime <= now) {
                 await client.close();
-                return interaction.reply({ 
-                    content: 'O horário do lembrete deve ser no futuro.', 
-                    flags: 'Ephemeral' 
-                });
+                return responderErro(interaction, erros.passado);
             }
 
             // Verificar se já existe um lembrete para o mesmo horário
@@ -105,63 +91,50 @@ module.exports = {
 
             if (existingReminder) {
                 await client.close();
-                return interaction.reply({ 
-                    content: 'Você já possui um lembrete agendado para este horário exato.', 
-                    flags: 'Ephemeral' 
-                });
+                return responderErro(interaction, erros.duplicado);
             }
 
             const reminder = {
+                scheduledFor: reminderTime,
                 hora,
-                conteudo,
-                channelId: interaction.channelId,
                 userId: interaction.user.id,
-                createdAt: now,
-                scheduledFor: reminderTime
+                channelId: interaction.channelId,
+                conteudo
             };
 
             const result = await temporario.insertOne(reminder);
-
-            const delay = reminderTime.getTime() - now.getTime();
-
-            // Armazena o ID do lembrete para uso posterior
             const reminderId = result.insertedId;
+            const delay = reminderTime.getTime() - now.getTime();
 
             await client.close();
 
+            logAcao(`Lembrete criado para ${hora} por ${interaction.user.id}`);
+
             setTimeout(async () => {
                 try {
-                    // Notifica o usuário do lembrete
                     await interaction.followUp({
                         content: `<@${interaction.user.id}>, aqui está seu lembrete: ${conteudo}`,
                     });
 
-                    // Abre uma nova conexão para remover o lembrete
                     const reminderClient = new MongoClient(uri);
                     await reminderClient.connect();
                     const reminderDb = reminderClient.db('ignis');
                     const reminderCollection = reminderDb.collection('temporario');
-                    
-                    // Remove o lembrete do banco de dados
                     await reminderCollection.deleteOne({ _id: reminderId });
-                    
-                    // Fecha a conexão
                     await reminderClient.close();
+                    logAcao(`Lembrete executado e removido para ${interaction.user.id} (${hora})`);
                 } catch (error) {
-                    console.error('Erro ao notificar ou remover lembrete:', error);
+                    logErro(error);
                 }
             }, delay);
 
-            await interaction.reply({ 
-                content: `Lembrete configurado com sucesso para ${hora}: ${conteudo}`, 
-                flags: 'Ephemeral' 
+            await interaction.reply({
+                content: `Lembrete configurado com sucesso para ${hora}: ${conteudo}`,
+                flags: 'Ephemeral'
             });
         } catch (error) {
-            console.error('Erro ao salvar lembrete:', error);
-            await interaction.reply({ 
-                content: 'Erro ao salvar o lembrete. Por favor, tente novamente mais tarde.', 
-                flags: 'Ephemeral' 
-            });
+            logErro(error);
+            await responderErro(interaction, erros.salvar);
             await client.close();
         }
     },
