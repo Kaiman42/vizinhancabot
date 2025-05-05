@@ -8,11 +8,27 @@ async function verificarLimiteDiario(interaction, cargoMod) {
     const banStats = await mongodb.findOne(mongodb.COLLECTIONS.TEMPORARIO, { _id: statsKey });
     const bansHoje = banStats ? banStats.quantidade : 0;
 
+    // Verificar limite diário
     if (cargoMod.maxban !== "infinito" && bansHoje >= cargoMod.maxban) {
         return {
             success: false,
             response: ERROS.LIMITE_DIARIO(cargoMod.maxban)
         };
+    }
+
+    // Verificar cooldown se não for o dono
+    if (cargoMod.cooldownBase && banStats?.ultimoBan) {
+        const agora = new Date();
+        const ultimoBan = new Date(banStats.ultimoBan);
+        const diferenca = Math.floor((agora - ultimoBan) / 1000); // Diferença em segundos
+        
+        if (diferenca < cargoMod.cooldownBase) {
+            const tempoRestante = Math.ceil(cargoMod.cooldownBase - diferenca);
+            return {
+                success: false,
+                response: ERROS.COOLDOWN(tempoRestante)
+            };
+        }
     }
 
     return {
@@ -32,6 +48,7 @@ async function registrarBan(statsKey, interaction, user, reason, cargoMod) {
                 userId: interaction.user.id,
                 username: interaction.user.tag,
                 cargo: cargoMod.nome,
+                ultimoBan: new Date(),
                 expiraEm: new Date(new Date().setHours(24, 0, 0, 0))
             },
             $push: {

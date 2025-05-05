@@ -60,13 +60,13 @@ async function setupDatabase() {
         const ignis = { database: db, client: botClient };
         global.ignisContext = ignis;
         await mongodb.initializeCollections();
-        const registroMembroModule = require('./eventos/registroMembro.js');
-        const registroServerModule = require('./eventos/registroServer.js');
+        //const registroMembroModule = require('./eventos/registroMembro.js');
+        //const registroServerModule = require('./eventos/registroServer.js');
         const boasVindasModule = require('./eventos/boas-vindas.js');
         //const bumpModule = require('./eventos/bump.js');
         await Promise.all([
-            registroMembroModule.initialize(botClient, ignis),
-            registroServerModule.initialize(botClient, ignis),
+            //registroMembroModule.initialize(botClient, ignis),
+            //registroServerModule.initialize(botClient, ignis),
             boasVindasModule.initialize(botClient, ignis),
             //bumpModule.initialize(botClient, ignis)
         ]);

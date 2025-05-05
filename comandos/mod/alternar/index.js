@@ -45,10 +45,7 @@ module.exports = {
       } else {
         canaisAfetados = await alternarTodosCanais(interaction, canalConfig, guildId);
         if (!canaisAfetados || canaisAfetados.length === 0) {
-          return responderErro(interaction, { 
-            content: '❌ Nenhum canal pôde ser alterado. Verifique suas permissões.',
-            flags: 'Ephemeral'
-          });
+          return responderErro(interaction, ERROS.PERMISSAO_NEGADA(error));
         }
       }
 

@@ -27,10 +27,13 @@ module.exports = {
 
     async execute(interaction) {
         if (interaction.options.getSubcommand() === 'ban') {
+            // Adiar a resposta imediatamente
+            await interaction.deferReply({ ephemeral: true });
+
             // Verificar permissões do executor
             const permResult = await verificarPermissoes(interaction);
             if (!permResult.success) {
-                return interaction.reply(permResult.response);
+                return interaction.editReply(permResult.response);
             }
 
             // Obter dados do comando
@@ -40,20 +43,20 @@ module.exports = {
 
             // Verificar auto-ban
             if (user.id === interaction.user.id) {
-                return interaction.reply(ERROS.AUTO_BAN);
+                return interaction.editReply(ERROS.AUTO_BAN);
             }
 
             // Verificar limite diário
             const limiteResult = await verificarLimiteDiario(interaction, permResult.cargo);
             if (!limiteResult.success) {
-                return interaction.reply(limiteResult.response);
+                return interaction.editReply(limiteResult.response);
             }
 
             // Verificar permissões sobre o alvo
             const member = await interaction.guild.members.fetch(user.id).catch(() => null);
             const targetPermResult = await verificarPermissoesMembro(interaction, member);
             if (!targetPermResult.success) {
-                return interaction.reply(targetPermResult.response);
+                return interaction.editReply(targetPermResult.response);
             }
 
             try {
@@ -87,14 +90,13 @@ module.exports = {
                 await enviarLog(interaction, banEmbed);
 
                 // Responder ao comando
-                return interaction.reply({
-                    content: `✅ O usuário ${user.tag} foi banido com sucesso.`,
-                    flags: 'Ephemeral'
+                return interaction.editReply({
+                    content: `✅ O usuário ${user.tag} foi banido com sucesso.`
                 });
 
             } catch (error) {
                 console.error(error);
-                return interaction.reply(ERROS.ERRO_GENERICO(user, error));
+                return interaction.editReply(ERROS.ERRO_GENERICO(user, error));
             }
         }
     },
