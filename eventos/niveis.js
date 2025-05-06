@@ -2,7 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const { gerarCorAleatoria } = require('../configuracoes/randomColor.js');
 const database = require('../configuracoes/mongodb.js');
 const { criarBarraProgresso } = require('../configuracoes/barraProgresso.js');
-const economia = require('../configuracoes/economia.js');
+const economia = require('../configuracoes/economia/index.js');
 
 class DatabaseService {
   static async initializeCollections(ignisContext) {
@@ -156,7 +156,7 @@ class DatabaseService {
         }
       } else {
         return await cargoRankCollection.insertOne({
-          cargos: [{ nivel: level, id: roleId }]
+          cargos: [{ nivel: level, id: roleId } ]
         });
       }
     } catch (error) {

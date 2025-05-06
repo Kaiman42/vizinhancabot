@@ -1,4 +1,6 @@
 const { handleVoiceStateUpdate } = require('../comandos/misc/radio');
+const fs = require('fs');
+const path = require('path');
 
 class EventHandler {
     constructor(client) {
@@ -6,6 +8,21 @@ class EventHandler {
     }
 
     setupEvents() {
+        // Carrega eventos automáticos da pasta eventos
+        const eventsPath = path.join(__dirname, '..', 'eventos');
+        const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
+
+        for (const file of eventFiles) {
+            const filePath = path.join(eventsPath, file);
+            const event = require(filePath);
+            if (event.once) {
+                this.client.once(event.name, (...args) => event.execute(...args));
+            } else {
+                this.client.on(event.name, (...args) => event.execute(...args));
+            }
+        }
+
+        // Eventos existentes
         this.client.once('ready', this.handleReady.bind(this));
         this.client.on('interactionCreate', this.handleInteraction.bind(this));
         this.client.on('voiceStateUpdate', this.handleVoiceState.bind(this));
