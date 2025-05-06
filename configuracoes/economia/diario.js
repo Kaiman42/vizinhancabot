@@ -1,54 +1,39 @@
 const { DAILY_COOLDOWN, DAILY_AMOUNT } = require('./constantes');
-const { obterSaldo, adicionarSaldo } = require('./saldo');
+const { adicionarSaldo } = require('./saldo');
 const mongodb = require('../mongodb');
 
-async function verificarDiario(userId) {
+const verificarDiario = async (userId) => {
   try {
     const doc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' });
-    if (!doc || !doc.usuarios) return true;
-    const usuario = doc.usuarios.find(u => u.userId === userId);
-    if (!usuario || !usuario.ultimoDaily) return true;
-    const agora = new Date().getTime();
-    const tempoPassado = agora - usuario.ultimoDaily;
-    return tempoPassado >= DAILY_COOLDOWN;
-  } catch (error) {
-    console.error(`Erro ao verificar daily para o usuário ${userId}:`, error);
+    const ultimoDaily = doc?.usuarios?.find(u => u.userId === userId)?.ultimoDaily || 0;
+    return Date.now() - ultimoDaily >= DAILY_COOLDOWN;
+  } catch {
     return false;
   }
-}
+};
 
-async function receberDiario(userId) {
+const receberDiario = async (userId) => {
   try {
-    const podeReceber = await verificarDiario(userId);
-    if (!podeReceber) {
+    if (!await verificarDiario(userId)) {
       const doc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' });
-      const usuario = doc.usuarios.find(u => u.userId === userId);
-      const ultimoDaily = usuario?.ultimoDaily || 0;
-      const tempoRestante = DAILY_COOLDOWN - (new Date().getTime() - ultimoDaily);
+      const ultimoDaily = doc?.usuarios?.find(u => u.userId === userId)?.ultimoDaily || 0;
       return {
         success: false,
-        message: 'Você já recebeu sua recompensa diária',
-        tempoRestante
+        tempoRestante: DAILY_COOLDOWN - (Date.now() - ultimoDaily)
       };
     }
+
     const novoSaldo = await adicionarSaldo(userId, DAILY_AMOUNT);
     await mongodb.updateOne(
       mongodb.COLLECTIONS.DADOS_USUARIOS,
       { _id: 'economias', 'usuarios.userId': userId },
-      { $set: { 'usuarios.$.ultimoDaily': new Date().getTime() } }
+      { $set: { 'usuarios.$.ultimoDaily': Date.now() } }
     );
-    return {
-      success: true,
-      message: `Você recebeu ${DAILY_AMOUNT} moedas!`,
-      novoSaldo
-    };
-  } catch (error) {
-    console.error(`Erro ao processar daily para o usuário ${userId}:`, error);
-    return { success: false, message: 'Ocorreu um erro ao processar sua recompensa diária' };
-  }
-}
 
-module.exports = {
-  verificarDiario,
-  receberDiario
+    return { success: true, novoSaldo };
+  } catch {
+    return { success: false, message: 'Erro ao processar daily' };
+  }
 };
+
+module.exports = { verificarDiario, receberDiario };

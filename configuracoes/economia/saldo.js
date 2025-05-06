@@ -1,120 +1,61 @@
 const { DEFAULT_BALANCE } = require('./constantes');
 const mongodb = require('../mongodb');
 
-async function obterSaldo(userId) {
+const obterSaldo = async (userId) => {
   try {
     const doc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' });
-    if (!doc || !doc.usuarios) return DEFAULT_BALANCE;
-    const usuario = doc.usuarios.find(u => u.userId === userId);
-    return usuario ? usuario.saldo || DEFAULT_BALANCE : DEFAULT_BALANCE;
-  } catch (error) {
-    console.error(`Erro ao obter saldo do usuário ${userId}:`, error);
+    return doc?.usuarios?.find(u => u.userId === userId)?.saldo || DEFAULT_BALANCE;
+  } catch {
     return DEFAULT_BALANCE;
   }
-}
+};
 
-async function adicionarSaldo(userId, amount) {
-  if (!userId || typeof amount !== 'number' || isNaN(amount)) {
-    console.error('Parâmetros inválidos para adicionarSaldo:', { userId, amount });
-    return false;
-  }
+const adicionarSaldo = async (userId, amount) => {
+  if (!userId || isNaN(amount)) return false;
   try {
-    const doc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' });
-    if (!doc) {
-      await mongodb.upsert(
-        mongodb.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'economias' },
-        { $set: { usuarios: [{ userId, saldo: amount }] } }
-      );
-      return amount;
-    }
-    if (!doc.usuarios) {
-      await mongodb.updateOne(
-        mongodb.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'economias' },
-        { $set: { usuarios: [{ userId, saldo: amount }] } }
-      );
-      return amount;
-    }
-    const usuarioExistente = doc.usuarios.find(u => u.userId === userId);
-    if (usuarioExistente) {
-      const novoSaldo = (usuarioExistente.saldo || 0) + amount;
-      await mongodb.updateOne(
-        mongodb.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'economias', 'usuarios.userId': userId },
-        { $set: { 'usuarios.$.saldo': novoSaldo } }
-      );
-      return novoSaldo;
-    } else {
-      await mongodb.updateOne(
-        mongodb.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'economias' },
-        { $push: { usuarios: { userId, saldo: amount } } }
-      );
-      return amount;
-    }
-  } catch (error) {
-    console.error(`Erro ao adicionar saldo para o usuário ${userId}:`, error);
-    return false;
-  }
-}
-
-async function removerSaldo(userId, amount) {
-  if (!userId || typeof amount !== 'number' || isNaN(amount)) {
-    console.error('Parâmetros inválidos para removerSaldo:', { userId, amount });
-    return false;
-  }
-  try {
-    const saldoAtual = await obterSaldo(userId);
-    if (saldoAtual < amount) return false;
-    const novoSaldo = saldoAtual - amount;
-    await mongodb.updateOne(
+    const update = await mongodb.updateOne(
       mongodb.COLLECTIONS.DADOS_USUARIOS,
       { _id: 'economias', 'usuarios.userId': userId },
-      { $set: { 'usuarios.$.saldo': novoSaldo } }
+      { $inc: { 'usuarios.$.saldo': amount } },
+      { upsert: true }
     );
-    return novoSaldo;
-  } catch (error) {
-    console.error(`Erro ao remover saldo do usuário ${userId}:`, error);
+    return update.modifiedCount > 0;
+  } catch {
     return false;
   }
-}
+};
 
-async function transferirSaldo(fromUserId, toUserId, amount) {
-  if (!fromUserId || !toUserId || typeof amount !== 'number' || isNaN(amount) || amount <= 0) {
-    console.error('Parâmetros inválidos para transferirSaldo:', { fromUserId, toUserId, amount });
-    return { success: false, message: 'Parâmetros inválidos para transferência' };
+const removerSaldo = async (userId, amount) => {
+  if (!userId || isNaN(amount)) return false;
+  const saldo = await obterSaldo(userId);
+  if (saldo < amount) return false;
+  const success = await adicionarSaldo(userId, -amount);
+  return success;
+};
+
+const transferirSaldo = async (fromUserId, toUserId, amount) => {
+  if (!fromUserId || !toUserId || isNaN(amount) || amount <= 0) {
+    return { success: false, message: 'Parâmetros inválidos' };
   }
   try {
     const saldoRemetente = await obterSaldo(fromUserId);
     if (saldoRemetente < amount) {
-      return { success: false, message: 'Saldo insuficiente para transferência' };
+      return { success: false, message: 'Saldo insuficiente' };
     }
-    const novoSaldoRemetente = await removerSaldo(fromUserId, amount);
-    const novoSaldoDestinatario = await adicionarSaldo(toUserId, amount);
-    if (novoSaldoRemetente === false || novoSaldoDestinatario === false) {
-      if (novoSaldoRemetente === false && novoSaldoDestinatario !== false) {
-        await removerSaldo(toUserId, amount);
-      } else if (novoSaldoRemetente !== false && novoSaldoDestinatario === false) {
-        await adicionarSaldo(fromUserId, amount);
-      }
-      return { success: false, message: 'Erro durante a transferência' };
+    await removerSaldo(fromUserId, amount);
+    const success = await adicionarSaldo(toUserId, amount);
+    if (!success) {
+      return { success: false, message: 'Erro ao adicionar saldo ao destinatário' };
     }
-    return {
-      success: true,
-      message: 'Transferência realizada com sucesso',
-      novoSaldoRemetente,
-      novoSaldoDestinatario
+    return { 
+      success: true, 
+      message: 'Transferência realizada',
+      novoSaldoRemetente: await obterSaldo(fromUserId),
+      novoSaldoDestinatario: await obterSaldo(toUserId)
     };
-  } catch (error) {
-    console.error('Erro ao transferir saldo:', error);
-    return { success: false, message: 'Erro durante a transferência' };
+  } catch {
+    return { success: false, message: 'Erro na transferência' };
   }
-}
-
-module.exports = {
-  obterSaldo,
-  adicionarSaldo,
-  removerSaldo,
-  transferirSaldo
 };
+
+module.exports = { obterSaldo, adicionarSaldo, removerSaldo, transferirSaldo };
