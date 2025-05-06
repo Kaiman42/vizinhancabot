@@ -1,4 +1,4 @@
-const { handleVoiceStateUpdate } = require('../comandos/misc/radio');
+const { handleVoiceStateUpdate } = require('../comandos/misc/radio/radio');
 const fs = require('fs');
 const path = require('path');
 
@@ -61,8 +61,21 @@ class EventHandler {
     async handleComponentInteraction(interaction) {
         const customId = interaction.customId;
         try {
-            const radioCommand = require('../comandos/misc/radio');
+            // Verificar se a interação ainda é válida
+            if (!interaction.isRepliable()) {
+                console.warn('Interação não é mais respondível:', customId);
+                return;
+            }
+
+            const radioCommand = require('../comandos/misc/radio/radio');
             if (customId.startsWith('radio_') || customId === 'select_radio' || customId.endsWith('_radio')) {
+                // Deferir a interação imediatamente para evitar timeout
+                await interaction.deferUpdate().catch(error => {
+                    if (error.code !== 10062) { // Ignora erro de interação desconhecida
+                        console.error('Erro ao deferir interação:', error);
+                    }
+                });
+
                 if (customId === 'radio_country_select' || customId.startsWith('radio_')) {
                     await (customId === 'radio_country_select' ? 
                         radioCommand.handleCountrySelect(interaction) : 
@@ -75,11 +88,23 @@ class EventHandler {
             }
         } catch (error) {
             console.error(`Erro ao processar interação de componente (${customId}):`, error);
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                    content: 'Ocorreu um erro ao processar esta interação.',
-                    ephemeral: true
-                }).catch(console.error);
+            if (interaction.isRepliable()) {
+                try {
+                    if (!interaction.replied && !interaction.deferred) {
+                        await interaction.reply({
+                            content: 'Ocorreu um erro ao processar esta interação.',
+                            ephemeral: true
+                        });
+                    } else if (interaction.deferred) {
+                        await interaction.editReply({
+                            content: 'Ocorreu um erro ao processar esta interação.',
+                        });
+                    }
+                } catch (replyError) {
+                    if (replyError.code !== 10062) {
+                        console.error('Erro ao tentar responder à interação:', replyError);
+                    }
+                }
             }
         }
     }
