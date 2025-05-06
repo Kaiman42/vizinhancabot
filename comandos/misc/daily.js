@@ -1,5 +1,6 @@
 const { criarBarraProgresso } = require('../../configuracoes/barraProgresso.js');
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
 const economia = require('../../configuracoes/economia/index.js');
 const mongodb = require('../../configuracoes/mongodb.js');
 
@@ -17,7 +18,7 @@ const altoMax = maximo;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('daily')
-        .setDescription('Receba sua recompensa diária de Grama'),
+        .setDescription('Receba sua recompensa diária de Gramas!'),
         
     async execute(interaction, ignis) {
         await interaction.deferReply();
