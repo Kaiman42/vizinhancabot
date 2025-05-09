@@ -1,4 +1,4 @@
-const { handleVoiceStateUpdate } = require('../comandos/misc/radio/radio');
+const { handleVoiceStateUpdate } = require('../comandos/misc/radio/estado');
 const fs = require('fs');
 const path = require('path');
 

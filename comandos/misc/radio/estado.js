@@ -8,6 +8,31 @@ function isChannelEmpty(channel) {
     return channel.members.filter(member => !member.user.bot).size === 0;
 }
 
+async function handleVoiceStateUpdate(oldState, newState) {
+    const guildId = oldState.guild.id;
+    
+    // Se não tiver rádio tocando neste servidor, ignora
+    if (!connections.has(guildId)) return;
+
+    const connection = connections.get(guildId);
+    const channelId = connection.joinConfig.channelId;
+
+    const channel = oldState.guild.channels.cache.get(channelId);
+    if (!channel) return;
+
+    // Se alguém entrou no canal, limpa o timeout se existir
+    if (newState.channelId === channelId) {
+        if (voiceTimeouts.has(guildId)) {
+            clearTimeout(voiceTimeouts.get(guildId));
+            voiceTimeouts.delete(guildId);
+        }
+    }
+    // Se alguém saiu do canal e agora está vazio
+    else if (oldState.channelId === channelId && isChannelEmpty(channel)) {
+        setupEmptyCheck(guildId, channelId, oldState.client);
+    }
+}
+
 function setupEmptyCheck(guildId, channelId, client) {
     if (voiceTimeouts.has(guildId)) {
         clearTimeout(voiceTimeouts.get(guildId));
@@ -19,11 +44,13 @@ function setupEmptyCheck(guildId, channelId, client) {
             try {
                 const refreshedChannel = await client.channels.fetch(channelId);
                 if (refreshedChannel && isChannelEmpty(refreshedChannel)) {
+                    const { getChannels } = require('./permissoes');
                     const channels = await getChannels(guildId);
                     if (channels?.botChannelId) {
                         const botChannel = await client.channels.fetch(channels.botChannelId);
                         await botChannel.send('📻 A rádio foi desligada automaticamente por inatividade.');
                     }
+                    const { stopRadio } = require('./radio');
                     await stopRadio(guildId, null, true);
                 }
             } catch (error) {
@@ -54,5 +81,6 @@ module.exports = {
     voiceTimeouts,
     isChannelEmpty,
     setupEmptyCheck,
-    clearRadioState
+    clearRadioState,
+    handleVoiceStateUpdate // Adicionando a exportação da função
 };

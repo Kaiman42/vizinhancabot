@@ -1,9 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
 const mongodb = require('../../../configuracoes/mongodb');
-const { RadioError, ErrorMessages, handleRadioError } = require('./erros');
+const { RadioError, ERROS_RADIO, handleRadioError } = require('./erros');
 const { LIMITS, validateRadioSelection, getPageLimits } = require('./limites');
-const { checkRadioPermissions, getChannels } = require('./permissoes');
+const { checkRadioPermissions } = require('./permissoes');
 const { 
     players, 
     connections, 
@@ -147,14 +147,14 @@ async function navigateRadios(interaction, direction) {
         const currentMessage = radioMessages.get(guildId);
         
         if (!currentMessage?.embeds?.[0]) {
-            throw new RadioError(ErrorMessages.NO_RADIO_PLAYING);
+            throw new RadioError(ERROS_RADIO.NO_RADIO_PLAYING);
         }
         
         const footerText = currentMessage.embeds[0].footer?.text || '';
         const match = footerText.match(/Rádio (\d+)\/\d+ de (.+)/);
         
         if (!match) {
-            throw new RadioError(ErrorMessages.NO_RADIO_PLAYING);
+            throw new RadioError(ERROS_RADIO.NO_RADIO_PLAYING);
         }
         
         const currentIndex = parseInt(match[1]) - 1;
@@ -188,35 +188,48 @@ async function handleCountrySelect(interaction) {
             await playRadio(interaction, country, 0);
             return;
         }
-        
-        const { end: maxRadios } = getPageLimits(countryRadios.length);
-        const buttons = [];
-        
-        for (let i = 0; i < maxRadios; i++) {
-            buttons.push(
-                new ButtonBuilder()
-                    .setCustomId(`radio_play_${country}_${i}`)
-                    .setLabel(countryRadios[i].name)
-                    .setStyle(ButtonStyle.Primary)
-            );
-        }
-        
-        buttons.push(
-            new ButtonBuilder()
-                .setCustomId('radio_back')
-                .setLabel('⬅️ Voltar')
-                .setStyle(ButtonStyle.Secondary)
-        );
-        
+
+        // Botão de voltar que será adicionado na última linha
+        const backButton = new ButtonBuilder()
+            .setCustomId('radio_back')
+            .setLabel('⬅️ Voltar')
+            .setStyle(ButtonStyle.Secondary);
+
         const rows = [];
-        for (let i = 0; i < buttons.length; i += LIMITS.MAX_RADIOS_PER_PAGE) {
-            rows.push(
-                new ActionRowBuilder().addComponents(
-                    ...buttons.slice(i, Math.min(i + LIMITS.MAX_RADIOS_PER_PAGE, buttons.length))
-                )
-            );
+        let currentRow = [];
+
+        // Adiciona os botões de rádio
+        for (let i = 0; i < Math.min(countryRadios.length, 10); i++) {
+            const button = new ButtonBuilder()
+                .setCustomId(`radio_play_${country}_${i}`)
+                .setLabel(countryRadios[i].name)
+                .setStyle(ButtonStyle.Primary);
+
+            currentRow.push(button);
+
+            // Cria uma nova linha a cada 5 botões
+            if (currentRow.length === 5) {
+                rows.push(new ActionRowBuilder().addComponents(currentRow));
+                currentRow = [];
+            }
         }
-        
+
+        // Se sobrou algum botão na última linha
+        if (currentRow.length > 0) {
+            if (currentRow.length < 5) {
+                // Adiciona o botão de voltar na mesma linha se houver espaço
+                currentRow.push(backButton);
+                rows.push(new ActionRowBuilder().addComponents(currentRow));
+            } else {
+                // Cria uma nova linha só para o botão de voltar
+                rows.push(new ActionRowBuilder().addComponents(currentRow));
+                rows.push(new ActionRowBuilder().addComponents([backButton]));
+            }
+        } else {
+            // Adiciona o botão de voltar em uma nova linha
+            rows.push(new ActionRowBuilder().addComponents([backButton]));
+        }
+
         await interaction.editReply({
             content: `📻 Selecione uma rádio de ${country}:`,
             components: rows

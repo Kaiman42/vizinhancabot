@@ -6,17 +6,16 @@ class RadioError extends Error {
     }
 }
 
-const ErrorMessages = {
-    NO_VOICE_CHANNEL: '❌ Você precisa estar em um canal de voz para usar este comando.',
-    NO_DJ_ROLE: '❌ Você precisa ter o cargo de DJ para usar este comando.',
-    NO_PERMISSION: '❌ Você não tem permissão para usar este comando.',
-    WRONG_CHANNEL: (channelId) => `❌ Este comando só pode ser usado no canal <#${channelId}>.`,
-    NO_RADIO_PLAYING: '❌ Não há rádio em execução no momento.',
-    OWNER_ONLY: (ownerId) => `❌ Apenas <@${ownerId}> pode controlar a rádio nesta sessão.`,
-    INVALID_RADIO: '❌ Rádio inválida ou não encontrada.',
-    NO_RADIOS_FOUND: (country) => `❌ Nenhuma rádio encontrada para ${country}.`,
-    INVALID_URL: (name) => `❌ URL inválida para a rádio ${name}`,
-    GENERAL_ERROR: (error) => `❌ Ocorreu um erro: ${error.message}`
+const ERROS_RADIO = {
+    NENHUM_CANAL: '❌ Você precisa estar em um canal de voz para usar este comando.',
+    SEM_CARGO_DJ: '❌ Você precisa ter o cargo de DJ para usar este comando.',
+    SEM_PERMISSAO: '❌ Você não tem permissão para usar este comando.',
+    CANAL_ERRADO: (channelId) => `❌ Este comando só pode ser usado no canal <#${channelId}>.`,
+    RADIO_TOCANDO: '❌ O bot já está executando uma rádio no momento.',
+    CONTROLADOR_SOMENTE: (ownerId) => `❌ Apenas <@${ownerId}> pode controlar a rádio nesta sessão.`,
+    NENHUMA_RADIO: (country) => `❌ Nenhuma rádio encontrada para ${country}.`,
+    URL_INVALIDA: (name) => `❌ URL inválida para a rádio ${name}`,
+    ERRO_GENERICO: (error) => `❌ Ocorreu um erro: ${error.message}`
 };
 
 async function handleRadioError(error, interaction) {
@@ -24,12 +23,12 @@ async function handleRadioError(error, interaction) {
 
     if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
-            content: error.message || ErrorMessages.GENERAL_ERROR(error),
+            content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
             ephemeral: true
         });
     } else {
         await interaction.followUp({
-            content: error.message || ErrorMessages.GENERAL_ERROR(error),
+            content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
             ephemeral: true
         });
     }
@@ -37,6 +36,6 @@ async function handleRadioError(error, interaction) {
 
 module.exports = {
     RadioError,
-    ErrorMessages,
+    ERROS_RADIO,
     handleRadioError
 };
