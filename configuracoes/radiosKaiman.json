@@ -1,0 +1,497 @@
+{
+  "_id": "radios",
+  "Kaiman": [
+      {
+          "name": "Rádio Cidade FM 107.1",
+          "place": "Rio Branco",
+          "description": "Pop, Sertanejo, Brazilian",
+          "url": "https://radio.garden/api/ara/content/listen/z2BwWo8F/channel.mp3?1746535895841"
+        },
+        {
+          "name": "Rádio Play AP",
+          "place": "Macapá",
+          "description": "Dance",
+          "url": "https://radio.garden/api/ara/content/listen/MOJGzPTp/channel.mp3?1746543948202"
+        },
+        {
+          "name": "Rádio Hub Amazônia",
+          "place": "Manaus",
+          "description": "Pagode",
+          "url": "https://radio.garden/api/ara/content/listen/cfPH7O2E/channel.mp3?1746542913878"
+        },
+        {
+          "name": "Anos Dourados FM",
+          "place": "Salvador",
+          "description": "Local, 1970",
+          "url": "https://radio.garden/api/ara/content/listen/knimxadW/channel.mp3?1746543003112"
+        },
+        {
+          "name": "Atos FM",
+          "place": "Fortaleza",
+          "description": "Gospel",
+          "url": "https://radio.garden/api/ara/content/listen/rzOnO19O/channel.mp3?1746536545505"
+        },
+        {
+          "name": "Super FM",
+          "place": "Vitória",
+          "description": "Sertanejo",
+          "url": "https://radio.garden/api/ara/content/listen/5HZXMBBb/channel.mp3?1746536623088"
+        },
+        {
+          "name": "AvivaWeb",
+          "place": "Goiânia",
+          "description": "Gospel",
+          "url": "https://radio.garden/api/ara/content/listen/pogYiPq0/channel.mp3?1746536704656"
+        },
+        {
+          "name": "Criativa Radio",
+          "place": "São Luís",
+          "description": "Gospel",
+          "url": "https://radio.garden/api/ara/content/listen/7B0xzYsn/channel.mp3?1746536767519"
+        },
+        {
+          "name": "Canção Nova",
+          "place": "Cuiabá",
+          "description": "Gospel",
+          "url": "https://radio.garden/api/ara/content/listen/LdJUlnVR/channel.mp3?1746536846888"
+        },
+        {
+          "name": "Abadia Rádio Web",
+          "place": "Campo Grande",
+          "description": "Gospel",
+          "url": "https://radio.garden/api/ara/content/listen/dq3pAUq8/channel.mp3?1746536931418"
+        },
+        {
+          "name": "CDL FM 102.9",
+          "place": "Belo Horizonte",
+          "description": "Acústico",
+          "url": "https://radio.garden/api/ara/content/listen/6gZR-DEW/channel.mp3?1746536990517"
+        },
+        {
+          "name": "Adoradores de Cristo",
+          "place": "Belém",
+          "description": "Gospel, Ao vivo, Locução",
+          "url": "https://radio.garden/api/ara/content/listen/6ubENFHb/channel.mp3?1746537169167"
+        },
+        {
+          "name": "Parahyba FM 103.9",
+          "place": "João Pessoa",
+          "description": "Pop",
+          "url": "https://radio.garden/api/ara/content/listen/7P0lbvv3/channel.mp3?1746537386564"
+        },
+        {
+          "name": "Sertanejo FM",
+          "place": "Ponta Grossa",
+          "description": "Sertanejo, Country",
+          "url": "https://radio.garden/api/ara/content/listen/f6AEO64O/channel.mp3?1744809824000"
+        },
+        {
+          "name": "Aprendiz Regular",
+          "place": "Recife",
+          "description": "MPB",
+          "url": "https://radio.garden/api/ara/content/listen/0u2sFct7/channel.mp3?1746537480131"
+        },
+        {
+          "name": "Brasileira Sat",
+          "place": "Teresina",
+          "description": "Forró",
+          "url": "https://radio.garden/api/ara/content/listen/V-P8D8QU/channel.mp3?1746537567946"
+        },
+        {
+          "name": "Viagem do Rock",
+          "place": "Maricá",
+          "description": "Rock",
+          "url": "https://radio.garden/api/ara/content/listen/5qPbJSW5/channel.mp3?1744809617703"
+        },
+        {
+          "name": "Mix Natal 103.9 FM",
+          "place": "Natal",
+          "description": "Pop",
+          "url": "https://radio.garden/api/ara/content/listen/k2vdDFXg/channel.mp3?1746537651278"
+        },
+        {
+          "name": "Ipanema Comunitária 87.9 FM",
+          "place": "Porto Alegre",
+          "description": "MPB",
+          "url": "https://radio.garden/api/ara/content/listen/yzs9iqEk/channel.mp3?1746540203665"
+        },
+        {
+          "name": "Rádio Rondônia",
+          "place": "Porto Velho",
+          "description": "Pagode",
+          "url": "https://radio.garden/api/ara/content/listen/-rAqHXYa/channel.mp3?1746540272568"
+        },
+        {
+          "name": "Monte Roraima FM 107.9",
+          "place": "Boa Vista",
+          "description": "Conversação",
+          "url": "https://radio.garden/api/ara/content/listen/uSYD4hMR/channel.mp3?1746540599664"
+        },
+        {
+          "name": "Rádio Lost",
+          "place": "Florianópolis",
+          "description": "Rock Alternativo",
+          "url": "https://radio.garden/api/ara/content/listen/eEMnBWDq/channel.mp3?1746540687864"
+        },
+        {
+          "name": "Alpha FM 101.7",
+          "place": "São Paulo",
+          "description": "Pop, Notícias",
+          "url": "https://radio.garden/api/ara/content/listen/PUSmt3pf/channel.mp3?1744809535057"
+        },
+        {
+          "name": "Fan FM 99.7 Aracaju",
+          "place": "Aracaju",
+          "description": "Country",
+          "url": "https://radio.garden/api/ara/content/listen/mUquCjbb/channel.mp3?1746540806930"
+        },
+        {
+          "name": "Rádio Pequi FM 87.5",
+          "place": "Palmas",
+          "description": "Sertanejo",
+          "url": "https://radio.garden/api/ara/content/listen/gvNwQIiB/channel.mp3?1746542713879"
+        },
+      {
+        "name": "Technolovers",
+        "place": "Cologne",
+        "description": "Dance, Electrônica, House",
+        "url": "https://radio.garden/api/ara/content/listen/DUom0dmZ/channel.mp3?1744583561953"
+      },
+      {
+        "name": "1LIVE",
+        "place": "Cologne",
+        "description": "Notícias, Pop, Remix",
+        "url": "https://wdr-1live-live.icecastssl.wdr.de/wdr/1live/live/mp3/128/stream.mp3"
+      },
+      {
+        "name": "N-Joy Radio",
+        "place": "Hamburg",
+        "description": "Pop",
+        "url": "https://radio.garden/api/ara/content/listen/5acHpkzG/channel.mp3?1746544312117"
+      },
+      {
+        "name": "Ebnézer Rádio",
+        "place": "Luanda",
+        "description": "Conversação",
+        "url": "https://radio.garden/api/ara/content/listen/h7pe_NqE/channel.mp3?1744813227358"
+      },
+      {
+        "name": "Radio Soyo 92.3 FM",
+        "place": "Soyo",
+        "description": "Conversação",
+        "url": "https://radio.garden/api/ara/content/listen/k1PmGf3U/channel.mp3?174481333262"
+      },
+      {
+        "name": "Kaji FM",
+        "place": "Belas",
+        "description": "Sertanejo, MPB",
+        "url": "https://radio.garden/api/ara/content/listen/fWJuB1kM/channel.mp3?1744813427654"
+      },
+      {
+        "name": "ABC Classic",
+        "place": "Sydney",
+        "description": "Clássica",
+        "url": "https://radio.garden/api/ara/content/listen/0iV2jebh/channel.mp3?1744810120882"
+      },
+      {
+        "name": "Coast FM 97.3",
+        "place": "Mandurah",
+        "description": "Country",
+        "url": "https://radio.garden/api/ara/content/listen/3ca7IKWJ/channel.mp3?1744810177383"
+      },
+      {
+        "name": "Star 102.7",
+        "place": "Cairns",
+        "description": "Rock",
+        "url": "https://radio.garden/api/ara/content/listen/asHKkA8v/channel.mp3?1744810295766"
+      },
+      {
+        "name": "Connect FM",
+        "place": "Surrey, Canadá",
+        "description": "Indian Folk",
+        "url": "https://radio.garden/api/ara/content/listen/RJK9kHB5/channel.mp3?1744811057942"
+      },
+      {
+        "name": "Seaside FM 105.9",
+        "place": "Eastern Passage, Canadá",
+        "description": "Pop, Comentário",
+        "url": "https://radio.garden/api/ara/content/listen/0q1RIqgq/channel.mp3?1744811165157"
+      },
+      {
+        "name": "Flow 98.7 FM",
+        "place": "Toronto, Canadá",
+        "description": "Notícias",
+        "url": "https://radio.garden/api/ara/content/listen/yatDs-XT/channel.mp3?1744811336653"
+      },
+      {
+        "name": "Chengdu PBS",
+        "place": "Chengdu, China",
+        "description": "Cantopop, Mandopop",
+        "url": "https://radio.garden/api/ara/content/listen/VmgzwOyR/channel.mp3?1744810587028"
+      },
+      {
+        "name": "RGD FM 99.2",
+        "place": "Chenzhou, China",
+        "description": "Notícias",
+        "url": "https://radio.garden/api/ara/content/listen/Q7bGz7ES/channel.mp3?1744810784477"
+      },
+      {
+        "name": "Shirley & Spinoza Radio",
+        "place": "Dali, China",
+        "description": "Alternativo, Eletrônica",
+        "url": "https://radio.garden/api/ara/content/listen/BgoQjOjJ/channel.mp3?1744810855427"
+      },
+      {
+        "name": "Big B Radio",
+        "place": "Seul, Coreia do Sul",
+        "description": "K-pop",
+        "url": "https://radio.garden/api/ara/content/listen/sjd0AW7d/channel.mp3?1744812486661"
+      },
+      {
+        "name": "My Hangul Cafe Online Radio",
+        "place": "Ulsan, Coreia do Sul",
+        "description": "Reggae, Riddim Dubstep, Dancehall",
+        "url": "https://radio.garden/api/ara/content/listen/xiGLaqaN/channel.mp3?1744812685243"
+      },
+      {
+        "name": "WBS 대구원음방송 98.3",
+        "place": "Daegu, Coreia do Sul",
+        "description": "Trot",
+        "url": "https://radio.garden/api/ara/content/listen/geLRSeCN/channel.mp3?1744813024648"
+      },
+      {
+        "name": "Arab Mix FM",
+        "place": "Cairo, Egito",
+        "description": "Salabi",
+        "url": "https://radio.garden/api/ara/content/listen/gtSSIih0/channel.mp3?1744813534769"
+      },
+      {
+        "name": "Radio 5:14",
+        "place": "Suez, Egito",
+        "description": "Música Árabe, Notícias",
+        "url": "https://radio.garden/api/ara/content/listen/hpbVoLBT/channel.mp3?1744813665616"
+      },
+      {
+        "name": "Radio Next راديو نكست",
+        "place": "Alexandria, Egito",
+        "description": "Conversação",
+        "url": "https://radio.garden/api/ara/content/listen/6Q1fczjA/channel.mp3?1744813720618"
+      },
+      {
+        "name": "Cadena Dial",
+        "place": "Madri, Espanha",
+        "description": "Latin Rock, Alternativo",
+        "url": "https://radio.garden/api/ara/content/listen/990OdNAE/channel.mp3?1744811794018"
+      },
+      {
+        "name": "Catalunya Ràdio",
+        "place": "Barcelona, Espanha",
+        "description": "Notícias, Comentário",
+        "url": "https://radio.garden/api/ara/content/listen/YJEqvEek/channel.mp3?1744811944103"
+      },
+      {
+        "name": "Remember The Music FM 96.6",
+        "place": "Valencia, Espanha",
+        "description": "Pop",
+        "url": "https://radio.garden/api/ara/content/listen/LqTD4h5O/channel.mp3?1744812092432"
+      },
+      {
+        "name": "KEXP FM 90.3",
+        "place": "Seattle, Estados Unidos",
+        "description": "Indie, Rock Alternativo",
+        "url": "https://radio.garden/api/ara/content/listen/2m0QRgcW/channel.mp3?1744807891186"
+      },
+      {
+        "name": "WNYC FM 93.9",
+        "place": "Nova York, Estados Unidos",
+        "description": "Notícias, Cultura",
+        "url": "https://radio.garden/api/ara/content/listen/38SmGFvr/channel.mp3?1744808359696"
+      },
+      {
+        "name": "KCRW FM 89.9",
+        "place": "Santa Monica, Estados Unidos",
+        "description": "Notícias",
+        "url": "https://radio.garden/api/ara/content/listen/vYh1VoKr/channel.mp3?1744808414062"
+      },
+      {
+        "name": "Electro Dancefloor",
+        "place": "Tourcoing, França",
+        "description": "Pop, Eletrônica",
+        "url": "https://radio.garden/api/ara/content/listen/6cBUI4fy/channel.mp3?1744583794667"
+      },
+      {
+        "name": "Classic FM",
+        "place": "Lião, França",
+        "description": "Clássica",
+        "url": "https://radio.garden/api/ara/content/listen/FRSxrcwB/channel.mp3?1744806422965"
+      },
+      {
+        "name": "Francebleu Vaucluse",
+        "place": "Carpentras, França",
+        "description": "Notícias, Rock",
+        "url": "https://radio.garden/api/ara/content/listen/u1G45aUI/channel.mp3?1744806460633"
+      },
+      {
+        "name": "Dimensione Suono Soft Centro",
+        "place": "Roma, Itália",
+        "description": "I-Pop",
+        "url": "https://radio.garden/api/ara/content/listen/Aa5VUg7w/channel.mp3?1744811393338"
+      },
+      {
+        "name": "Radio Italianissima",
+        "place": "Milão, Itália",
+        "description": "Pop",
+        "url": "https://radio.garden/api/ara/content/listen/L9DYDW6G/channel.mp3?1744811594089"
+      },
+      {
+        "name": "Radio Mitology",
+        "place": "Florência, Itália",
+        "description": "Pop",
+        "url": "https://radio.garden/api/ara/content/listen/9vdxkGRN/channel.mp3?1744811651341"
+      },
+      {
+        "name": "Listen.moe",
+        "place": "Tóquio, Japão",
+        "description": "J-pop, Anime",
+        "url": "https://radio.garden/api/ara/content/listen/XehO7lZ3/channel.mp3?1744584128032"
+      },
+      {
+        "name": "Tannan FM 79.1",
+        "place": "Sabae, Japão",
+        "description": "Cultura",
+        "url": "https://radio.garden/api/ara/content/listen/xows1EuO/channel.mp3?1744807294042"
+      },
+      {
+        "name": "Ottava",
+        "place": "Tóquio, Japão",
+        "description": "Clássica",
+        "url": "https://radio.garden/api/ara/content/listen/rDch0y97/channel.mp3?1744807451856"
+      },
+      {
+        "name": "Fara Fara Radio",
+        "place": "Monterrey, México",
+        "description": "Regional Mexican",
+        "url": "https://radio.garden/api/ara/content/listen/HEaRUndg/channel.mp3?1744812168799"
+      },
+      {
+        "name": "La Morrita 95.3 FM",
+        "place": "El Fuerte, México",
+        "description": "Conversação",
+        "url": "https://radio.garden/api/ara/content/listen/SzLE4C9G/channel.mp3?1744812268414"
+      },
+      {
+        "name": "La Tremenda FM 89.3 XERSD",
+        "place": "Santiago Papasquiaro, México",
+        "description": "Notícias, Relato",
+        "url": "https://s2.mexside.net/8028/stream"
+      },
+      {
+        "name": "80s Radio Zoom",
+        "place": "Londres, Reino Unido",
+        "description": "80s, Pop",
+        "url": "https://radio.garden/api/ara/content/listen/bwKxWHaw/channel.mp3?1744808497230"
+      },
+      {
+        "name": "Greatest Hits Non-Stop",
+        "place": "Stonehaven, Reino Unido",
+        "description": "Pop, Alternativo, Indie, R&B/Soul",
+        "url": "https://s8.myradiostream.com/58238/listen.mp3"
+      },
+      {
+        "name": "Mi-Soul",
+        "place": "Londres, Reino Unido",
+        "description": "Hip-Hop/Rap",
+        "url": "https://radio.garden/api/ara/content/listen/e83ULVGv/channel.mp3?1744808752646"
+      },
+      {
+        "name": "Country Radio",
+        "place": "Praga, República Tcheca",
+        "description": "Country",
+        "url": "https://radio.garden/api/ara/content/listen/FTy5XV2q/channel.mp3?1744807647989"
+      },
+      {
+        "name": "Helax 93.7",
+        "place": "Ostrava, República Tcheca",
+        "description": "Dance",
+        "url": "https://radio.garden/api/ara/content/listen/auJHIxwe/channel.mp3?1744807731538"
+      },
+      {
+        "name": "Kiss Radio",
+        "place": "Praga, República Tcheca",
+        "description": "Pop",
+        "url": "https://radio.garden/api/ara/content/listen/bTk3h2CN/channel.mp3?1744807812658"
+      },
+      {
+        "name": "Radio Record",
+        "place": "São Petesburgo, Rússia",
+        "description": "Hardbass",
+        "url": "https://radio.garden/api/ara/content/listen/ttZ8tDJW/channel.mp3?1744583271972"
+      },
+      {
+        "name": "Avtoradio",
+        "place": "Volokolamsk, Rússia",
+        "description": "Notícias",
+        "url": "https://radio.garden/api/ara/content/listen/spXvRF14/channel.mp3?1744806689599"
+      },
+      {
+        "name": "Govorit Maykop",
+        "place": "Maykop, Rússia",
+        "description": "Pop",
+        "url": "https://radio.garden/api/ara/content/listen/02LGWRFp/channel.mp3?1744806870731"
+      },
+      {
+        "name": "SClubalicious Radio",
+        "place": "Järfälla, Suécia",
+        "description": "House",
+        "url": "https://radio.garden/api/ara/content/listen/3m9b9-Xz/channel.mp3?1744814370579"
+      },
+      {
+        "name": "Oldies FM",
+        "place": "Gävle, Suécia",
+        "description": "R&B/Soul",
+        "url": "https://radio.garden/api/ara/content/listen/4reiYM6H/channel.mp3?1744814426313"
+      },
+      {
+        "name": "P4 Västmanland FM 100.5",
+        "place": "Vastmanland, Suécia",
+        "description": "Pop, Comentário",
+        "url": "https://radio.garden/api/ara/content/listen/F5iguC8q/channel.mp3?1744814523811"
+      },
+      {
+        "name": "Tahiti Breeze 97.5",
+        "place": "Pape'ete, Taiti",
+        "description": "R&B/Soul, Rock",
+        "url": "https://radio.garden/api/ara/content/listen/zkOwlV2n/channel.mp3?1744813906380"
+      },
+      {
+        "name": "Polynésie 1ere FM 95.2",
+        "place": "Pape'ete, Taiti",
+        "description": "Notícias",
+        "url": "https://radio.garden/api/ara/content/listen/WmW9ywct/channel.mp3?1744814157331"
+      },
+      {
+        "name": "Tiare FM 104.2",
+        "place": "Pape'ete, Taiti",
+        "description": "Reggae",
+        "url": "https://radio.garden/api/ara/content/listen/MAvMn4iT/channel.mp3?1744814118066"
+      },
+      {
+        "name": "Breezy FM",
+        "place": "Narsampet, Índia",
+        "description": "Bollywood",
+        "url": "https://radio.garden/api/ara/content/listen/RLIxjIDx/channel.mp3?1744809019656"
+      },
+      {
+        "name": "Maha FM",
+        "place": "Ponnamaravathi, Índia",
+        "description": "Bollywood, Soundtrack",
+        "url": "https://radio.garden/api/ara/content/listen/MsV9qXNg/channel.mp3?1744809097490"
+      },
+      {
+        "name": "Rangeela Radio",
+        "place": "Kolhapur, Índia",
+        "description": "Bollywood",
+        "url": "https://radio.garden/api/ara/content/listen/4gKAHq3y/channel.mp3?1744809220623"
+      }
+    ]
+}

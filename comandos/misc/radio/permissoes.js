@@ -10,7 +10,7 @@ async function hasDjRole(member) {
             return true;
         }
         
-        return member.roles.cache.has(configDoc.cargos.dj.id);
+        return configDoc.cargos?.dj?.id ? member.roles.cache.has(configDoc.cargos.dj.id) : true;
     } catch (error) {
         console.error('Erro ao verificar cargo DJ:', error);
         return true;
@@ -27,16 +27,18 @@ async function getChannels(guildId) {
         
         let botChannelId = null;
         
-        for (const categoria of configDoc.categorias) {
-            if (!categoria.canais) continue;
-            
-            for (const canal of categoria.canais) {
-                if (canal.nome === 'bot') {
-                    botChannelId = canal.id;
-                    break;
+        if (configDoc.categorias) {
+            for (const categoria of configDoc.categorias) {
+                if (!categoria.canais) continue;
+                
+                for (const canal of categoria.canais) {
+                    if (canal.nome === 'bot') {
+                        botChannelId = canal.id;
+                        break;
+                    }
                 }
+                if (botChannelId) break;
             }
-            if (botChannelId) break;
         }
         
         return { botChannelId };
@@ -54,6 +56,10 @@ async function checkRadioPermissions(interaction) {
 
     // Obtém os canais antes de verificá-los
     const channels = await getChannels(interaction.guild.id);
+
+    if (!channels) {
+      throw new RadioError('❌ Configuração de canais não encontrada.');
+    }
     
     if (!channels?.botChannelId) {
         throw new RadioError('❌ Configuração de canais não encontrada.');

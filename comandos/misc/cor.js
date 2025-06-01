@@ -8,6 +8,10 @@ module.exports = {
     
     async execute(interaction) {
         try {
+            if (interaction.deferred || interaction.replied || interaction.responded) {
+                return;
+            }
+            
             await interaction.deferReply();
             
             const coresCollection = await getCollection('configuracoes');

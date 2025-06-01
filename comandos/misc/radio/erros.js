@@ -20,17 +20,20 @@ const ERROS_RADIO = {
 
 async function handleRadioError(error, interaction) {
     console.error('Erro na rádio:', error);
-
-    if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-            content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
-            ephemeral: true
-        });
-    } else {
-        await interaction.followUp({
-            content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
-            ephemeral: true
-        });
+    try {
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({
+                content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
+                ephemeral: true
+            });
+        } else {
+            await interaction.reply({
+                content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
+                ephemeral: true
+            });
+        }
+    } catch (err) {
+        console.error("Failed to send error message:", err);
     }
 }
 

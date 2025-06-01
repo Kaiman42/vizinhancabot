@@ -123,15 +123,27 @@ async function playRadio(interaction, country, radioIndex) {
 
 async function stopRadio(guildId, interaction, skipMessage = false) {
     try {
+        const connection = connections.get(guildId);
+        if (connection) {
+            connection.destroy();
+            connections.delete(guildId);
+        }
         clearRadioState(guildId);
-        
+
         if (interaction && !skipMessage) {
-            await interaction.followUp({
+            const oldMessage = radioMessages.get(guildId);
+            if (oldMessage) {
+                try {
+                    await oldMessage.delete();
+                } catch (error) {
+                    console.error("Erro ao apagar mensagem:", error);
+                }
+            }
+            await interaction.channel.send({
                 content: '✅ Rádio desconectada com sucesso!',
-                ephemeral: true
             });
         }
-        
+
         return true;
     } catch (error) {
         if (interaction && !skipMessage) {
@@ -141,169 +153,191 @@ async function stopRadio(guildId, interaction, skipMessage = false) {
     }
 }
 
-async function navigateRadios(interaction, direction) {
-    try {
-        const guildId = interaction.guild.id;
-        const currentMessage = radioMessages.get(guildId);
-        
-        if (!currentMessage?.embeds?.[0]) {
-            throw new RadioError(ERROS_RADIO.NO_RADIO_PLAYING);
-        }
-        
-        const footerText = currentMessage.embeds[0].footer?.text || '';
-        const match = footerText.match(/Rádio (\d+)\/\d+ de (.+)/);
-        
-        if (!match) {
-            throw new RadioError(ERROS_RADIO.NO_RADIO_PLAYING);
-        }
-        
-        const currentIndex = parseInt(match[1]) - 1;
-        const country = match[2];
-        
-        const radios = await loadRadios();
-        const countryRadios = radios[country];
-        
-        const newIndex = direction === 'next' 
-            ? (currentIndex + 1) % countryRadios.length
-            : (currentIndex - 1 + countryRadios.length) % countryRadios.length;
-        
-        return await playRadio(interaction, country, newIndex);
-    } catch (error) {
-        await handleRadioError(error, interaction);
-        return false;
-    }
-}
 
-async function handleCountrySelect(interaction) {
-    try {
+
+
+
+async function handlePlay(interaction) {
+    await interaction.deferReply();
+     try {
         await checkRadioPermissions(interaction);
-        const country = interaction.values[0];
-        const radios = await loadRadios();
-        const countryRadios = radios[country];
-        
+        const radioIndex = parseInt(interaction.values[0]);
         const guildId = interaction.guild.id;
-        const currentMessage = radioMessages.get(guildId);
-        
-        if (currentMessage && radioOwners.get(guildId) === interaction.user.id) {
-            await playRadio(interaction, country, 0);
-            return;
+
+        const fs = require('fs').promises;
+        const path = require('path');
+        const filePath = path.join(__dirname, '../../../configuracoes/radiosKaiman.json');
+        const data = await fs.readFile(filePath, 'utf8');
+        const radiosData = JSON.parse(data);
+        const kaimanRadios = radiosData.Kaiman || [];
+
+         if (kaimanRadios.length === 0) {
+            throw new RadioError('❌ Nenhuma rádio encontrada na categoria Kaiman.');
         }
 
-        // Botão de voltar que será adicionado na última linha
-        const backButton = new ButtonBuilder()
-            .setCustomId('radio_back')
-            .setLabel('⬅️ Voltar')
-            .setStyle(ButtonStyle.Secondary);
+        const radio = kaimanRadios[radioIndex];
 
-        const rows = [];
-        let currentRow = [];
+        const voiceChannel = interaction.member.voice.channel;
 
-        // Adiciona os botões de rádio
-        for (let i = 0; i < Math.min(countryRadios.length, 10); i++) {
-            const button = new ButtonBuilder()
-                .setCustomId(`radio_play_${country}_${i}`)
-                .setLabel(countryRadios[i].name)
-                .setStyle(ButtonStyle.Primary);
-
-            currentRow.push(button);
-
-            // Cria uma nova linha a cada 5 botões
-            if (currentRow.length === 5) {
-                rows.push(new ActionRowBuilder().addComponents(currentRow));
-                currentRow = [];
-            }
+        let connection = connections.get(guildId);
+        if (!connection) {
+            connection = joinVoiceChannel({
+                channelId: voiceChannel.id,
+                guildId: guildId,
+                adapterCreator: interaction.guild.voiceAdapterCreator,
+            });
+            connections.set(guildId, connection);
+            radioOwners.set(guildId, interaction.user.id);
         }
 
-        // Se sobrou algum botão na última linha
-        if (currentRow.length > 0) {
-            if (currentRow.length < 5) {
-                // Adiciona o botão de voltar na mesma linha se houver espaço
-                currentRow.push(backButton);
-                rows.push(new ActionRowBuilder().addComponents(currentRow));
-            } else {
-                // Cria uma nova linha só para o botão de voltar
-                rows.push(new ActionRowBuilder().addComponents(currentRow));
-                rows.push(new ActionRowBuilder().addComponents([backButton]));
-            }
-        } else {
-            // Adiciona o botão de voltar em uma nova linha
-            rows.push(new ActionRowBuilder().addComponents([backButton]));
+        let player = players.get(guildId);
+        if (!player) {
+            player = createAudioPlayer();
+            players.set(guildId, player);
+            connection.subscribe(player);
         }
 
-        await interaction.editReply({
-            content: `📻 Selecione uma rádio de ${country}:`,
-            components: rows
+        const resource = createAudioResource(radio.url, {
+            inlineVolume: true,
         });
-    } catch (error) {
+        resource.volume?.setVolume(LIMITS.DEFAULT_VOLUME);
+        player.play(resource);
+
+        const embed = new EmbedBuilder()
+            .setColor(0x3498db)
+            .setTitle(`🎵 Rádio: ${radio.name}`)
+            .setDescription(radio.description || 'Sem descrição')
+            .addFields(
+                { name: '📍 Local', value: radio.place || 'Desconhecido' },
+                { name: '🎧 Canal', value: `<#${voiceChannel.id}>` },
+                { name: '🎭 DJ', value: `<@${radioOwners.get(guildId)}>` }
+            )
+            .setFooter({ text: `Rádio ${radioIndex + 1}/${kaimanRadios.length} de Kaiman` })
+            .setTimestamp();
+
+
+         const controlButtons = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('radio_stop')
+                    .setLabel('⏹️ Parar')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+        const oldMessage = radioMessages.get(guildId);
+        if (oldMessage) {
+            try {
+                await oldMessage.delete();
+            } catch (error) { }
+        }
+
+        const message = await interaction.update({
+            embeds: [embed],
+            components: [controlButtons],
+            fetchReply: true
+        });
+        radioMessages.set(guildId, message);
+        setupEmptyCheck(guildId, voiceChannel.id, interaction.client);
+
+
+    } catch (error) { // Lidar com erros ao reproduzir a rádio
         await handleRadioError(error, interaction);
     }
 }
 
 async function handleButton(interaction) {
+    await interaction.deferReply();
     try {
         await checkRadioPermissions(interaction);
-        const customId = interaction.customId;
-        const guildId = interaction.guild.id;
+        if (!interaction.isButton()) return;
 
-        if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferUpdate();
-        }
+        const customId = interaction.customId;
 
         if (customId === 'radio_stop') {
-            await stopRadio(guildId, interaction);
-        } else if (customId.startsWith('radio_play_')) {
-            const [, , country, index] = customId.split('_');
-            await playRadio(interaction, country, parseInt(index));
-        } else if (customId === 'radio_back') {
-            await module.exports.execute(interaction);
-        } else if (customId === 'radio_next') {
-            await navigateRadios(interaction, 'next');
-        } else if (customId === 'radio_prev') {
-            await navigateRadios(interaction, 'prev');
+            try {
+                await interaction.message.delete();
+            } catch (error) {
+                console.error("Erro ao apagar mensagem:", error);
+            }
+            await stopRadio(interaction.guild.id, interaction);
+        } else {
+            const page = parseInt(customId.split('_')[3]);
+
+            if (customId.startsWith('radio_next_page')) {
+                // {{change 1: Skip if next page is out of range}}
+            } else if (customId.startsWith('radio_prev_page')) {
+                 // {{change 2: Skip if previous page is out of range}}
+            }
         }
     } catch (error) {
         await handleRadioError(error, interaction);
     }
 }
 
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('radio')
         .setDescription('Toca uma rádio no canal de voz dedicado'),
-    
+
     async execute(interaction) {
+        await interaction.deferReply();
         try {
-            await interaction.deferReply();
             await checkRadioPermissions(interaction);
-            
-            const radios = await loadRadios();
-            const countries = Object.keys(radios)
-                .filter(c => Array.isArray(radios[c]) && radios[c].length > 0);
-            
-            if (countries.length === 0) {
-                throw new RadioError('❌ Nenhuma rádio encontrada. Contate um administrador para configurar rádios.');
+
+            const fs = require('fs').promises;
+            const path = require('path');
+            const filePath = path.join(__dirname, '../../../configuracoes/radiosKaiman.json');
+            const data = await fs.readFile(filePath, 'utf8');
+            const radiosData = JSON.parse(data);
+            const kaimanRadios = radiosData.Kaiman || [];
+
+            if (kaimanRadios.length === 0) {
+                throw new RadioError('❌ Nenhuma rádio encontrada na categoria Kaiman.');
             }
-            
+
+            let page = 0;
+            const radiosPerPage = 25;
+            const totalPages = Math.ceil(kaimanRadios.length / radiosPerPage);
+
+            const options = kaimanRadios.slice(page * radiosPerPage, (page + 1) * radiosPerPage).map((radio, index) => ({
+                label: radio.name,
+                description: radio.place || 'Desconhecido',
+                value: (index + page * radiosPerPage).toString(),
+            }));
+
             const row = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
-                    .setCustomId('radio_country_select')
-                    .setPlaceholder('Escolha um país')
-                    .addOptions(countries.map(country => ({
-                        label: country,
-                        description: `${radios[country].length} rádios disponíveis`,
-                        value: country
-                    })))
+                    .setCustomId('radio_play')
+                    .setPlaceholder('Selecione uma rádio')
+                    .addOptions(options)
             );
-            
-            await interaction.editReply({
-                content: '📻 Selecione um país para ver as rádios disponíveis:',
-                components: [row]
-            });
+
+            const buttonRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`radio_prev_page_${page}`)
+                        .setLabel('Anterior')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(page === 0),
+                    new ButtonBuilder()
+                        .setCustomId(`radio_next_page_${page}`)
+                        .setLabel('Próxima')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setDisabled(totalPages <= 1 || page === totalPages - 1)
+                );
+
+            // Check if interaction has been replied to
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.editReply({
+                    content: '📻 Selecione uma rádio:',
+                    components: [row, buttonRow]
+                });
+            }
+
         } catch (error) {
             await handleRadioError(error, interaction);
         }
     },
-    
+
     handleButton,
-    handleCountrySelect
+    handlePlay
 };

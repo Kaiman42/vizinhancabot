@@ -61,6 +61,13 @@ class EventHandler {
     async handleComponentInteraction(interaction) {
         const customId = interaction.customId;
         try {
+            // Deferir a interação imediatamente para evitar timeout
+            await interaction.deferUpdate().catch(error => {
+                if (error.code !== 10062) {
+                    console.error('Erro ao deferir interação:', error);
+                }
+            });
+
             // Verificar se a interação ainda é válida
             if (!interaction.isRepliable()) {
                 console.warn('Interação não é mais respondível:', customId);
@@ -68,24 +75,14 @@ class EventHandler {
             }
 
             const radioCommand = require('../comandos/misc/radio/radio');
-            if (customId.startsWith('radio_') || customId === 'select_radio' || customId.endsWith('_radio')) {
-                // Deferir a interação imediatamente para evitar timeout
-                await interaction.deferUpdate().catch(error => {
-                    if (error.code !== 10062) { // Ignora erro de interação desconhecida
-                        console.error('Erro ao deferir interação:', error);
-                    }
-                });
+            if (customId.startsWith('radio_') || customId === 'radio_play' ) {
 
-                if (customId === 'radio_country_select' || customId.startsWith('radio_')) {
-                    await (customId === 'radio_country_select' ? 
-                        radioCommand.handleCountrySelect(interaction) : 
-                        radioCommand.handleButton(interaction));
-                } else if (customId === 'select_radio') {
-                    await radioCommand.handleSelectMenu?.(interaction);
-                } else {
-                    await radioCommand.handleButton?.(interaction);
-                }
+            if (customId === 'radio_play') {
+                await radioCommand.handlePlay(interaction);
+            } else {
+                await radioCommand.handleButton(interaction);
             }
+        }
         } catch (error) {
             console.error(`Erro ao processar interação de componente (${customId}):`, error);
             if (interaction.isRepliable()) {

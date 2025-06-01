@@ -22,14 +22,18 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     // Se alguém entrou no canal, limpa o timeout se existir
     if (newState.channelId === channelId) {
-        if (voiceTimeouts.has(guildId)) {
+        // {{change 1: Only clear timeout if the user is not a bot}}
+        if (!newState.member.user.bot && voiceTimeouts.has(guildId)) {
             clearTimeout(voiceTimeouts.get(guildId));
             voiceTimeouts.delete(guildId);
         }
     }
     // Se alguém saiu do canal e agora está vazio
     else if (oldState.channelId === channelId && isChannelEmpty(channel)) {
-        setupEmptyCheck(guildId, channelId, oldState.client);
+        // {{change 1: Prevent multiple empty checks}}
+        if (!voiceTimeouts.has(guildId)) {
+            setupEmptyCheck(guildId, channelId, oldState.client);
+        }
     }
 }
 
