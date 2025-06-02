@@ -56,18 +56,9 @@ class EventHandler {
         } else if (interaction.isStringSelectMenu() || interaction.isButton()) {
             await this.handleComponentInteraction(interaction);
         }
-    }
-
-    async handleComponentInteraction(interaction) {
+    }    async handleComponentInteraction(interaction) {
         const customId = interaction.customId;
         try {
-            // Deferir a interação imediatamente para evitar timeout
-            await interaction.deferUpdate().catch(error => {
-                if (error.code !== 10062) {
-                    console.error('Erro ao deferir interação:', error);
-                }
-            });
-
             // Verificar se a interação ainda é válida
             if (!interaction.isRepliable()) {
                 console.warn('Interação não é mais respondível:', customId);

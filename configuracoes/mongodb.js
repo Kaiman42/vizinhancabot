@@ -143,8 +143,22 @@ async function initializeCollections() {
     //await upsert(COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' }, { $setOnInsert: { _id: 'niveis' } });
     await upsert(COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' }, { $setOnInsert: { _id: 'economias' } });
     await upsert(COLLECTIONS.DADOS_USUARIOS, { _id: 'evitar_spam' }, { $setOnInsert: { _id: 'evitar_spam' } });
+    
     // Iniciando coleção ignis (configuracoes) e seus documentos
     await ensureCollection(COLLECTIONS.CONFIGURACOES);
+    
+    // Inicializar documento de rádios se não existir
+    const radiosDoc = await findOne(COLLECTIONS.CONFIGURACOES, { _id: 'radios' });
+    if (!radiosDoc) {
+      await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'radios' }, { 
+        $setOnInsert: { 
+          _id: 'radios',
+          Kaiman: [] 
+        } 
+      });
+    }
+    
+    // Inicializar outros documentos de configuração
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'cores' }, { $setOnInsert: { _id: 'cores' } });
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'escopos' }, { $setOnInsert: { _id: 'escopos' } });
     await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'patentes' }, { $setOnInsert: { _id: 'patentes' } });
