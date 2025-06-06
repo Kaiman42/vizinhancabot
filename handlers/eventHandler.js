@@ -8,112 +8,70 @@ class EventHandler {
     }
 
     setupEvents() {
-        // Carrega eventos automáticos da pasta eventos
         const eventsPath = path.join(__dirname, '..', 'eventos');
-        const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
+        fs.readdirSync(eventsPath)
+            .filter(file => file.endsWith('.js'))
+            .forEach(file => {
+                const event = require(path.join(eventsPath, file));
+                const handler = (...args) => event.execute(...args);
+                event.once ? this.client.once(event.name, handler) : this.client.on(event.name, handler);
+            });
 
-        for (const file of eventFiles) {
-            const filePath = path.join(eventsPath, file);
-            const event = require(filePath);
-            if (event.once) {
-                this.client.once(event.name, (...args) => event.execute(...args));
-            } else {
-                this.client.on(event.name, (...args) => event.execute(...args));
-            }
-        }
-
-        // Eventos existentes
-        this.client.once('ready', this.handleReady.bind(this));
+        this.client.once('ready', () => {
+            this.setupCleanup();
+        });
         this.client.on('interactionCreate', this.handleInteraction.bind(this));
         this.client.on('voiceStateUpdate', this.handleVoiceState.bind(this));
-        this.setupErrorHandler();
-    }
-
-    handleReady() {
-        console.log(`Bot está online como ${this.client.user.tag}!`);
-        this.setupCleanup();
+        
+        process.on('unhandledRejection', error => {
+            if (error?.code !== 10008) console.error(error);
+        });
     }
 
     setupCleanup() {
-        const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+        const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000;
         setTimeout(() => {
             this.cleanupRemovedUsersLevels();
-            setInterval(() => this.cleanupRemovedUsersLevels(), CLEANUP_INTERVAL_MS);
+            setInterval(this.cleanupRemovedUsersLevels.bind(this), CLEANUP_INTERVAL);
         }, 60 * 60 * 1000);
     }
 
     async handleVoiceState(oldState, newState) {
-        try {
-            await handleVoiceStateUpdate(oldState, newState);
-        } catch (error) {
-            console.error('Erro ao processar mudança de estado de voz:', error);
-        }
+        await handleVoiceStateUpdate(oldState, newState).catch(() => {});
     }
 
     async handleInteraction(interaction) {
         if (interaction.isCommand()) {
             await global.commandHandler.handleCommand(interaction);
-        } else if (interaction.isStringSelectMenu() || interaction.isButton()) {
-            await this.handleComponentInteraction(interaction);
+            return;
         }
-    }    async handleComponentInteraction(interaction) {
+
+        if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
+
+        const radioCommand = require('../comandos/misc/radio/radio');
         const customId = interaction.customId;
+
+        if (!customId.startsWith('radio_') && customId !== 'radio_play') return;
+
         try {
-            // Verificar se a interação ainda é válida
-            if (!interaction.isRepliable()) {
-                console.warn('Interação não é mais respondível:', customId);
-                return;
-            }
-
-            const radioCommand = require('../comandos/misc/radio/radio');
-            if (customId.startsWith('radio_') || customId === 'radio_play' ) {
-
             if (customId === 'radio_play') {
                 await radioCommand.handlePlay(interaction);
             } else {
                 await radioCommand.handleButton(interaction);
             }
-        }
-        } catch (error) {
-            console.error(`Erro ao processar interação de componente (${customId}):`, error);
-            if (interaction.isRepliable()) {
-                try {
-                    if (!interaction.replied && !interaction.deferred) {
-                        await interaction.reply({
-                            content: 'Ocorreu um erro ao processar esta interação.',
-                            ephemeral: true
-                        });
-                    } else if (interaction.deferred) {
-                        await interaction.editReply({
-                            content: 'Ocorreu um erro ao processar esta interação.',
-                        });
-                    }
-                } catch (replyError) {
-                    if (replyError.code !== 10062) {
-                        console.error('Erro ao tentar responder à interação:', replyError);
-                    }
-                }
+        } catch {
+            if (!interaction.replied && interaction.isRepliable()) {
+                await interaction.reply({ content: 'Erro ao processar interação.', ephemeral: true });
             }
         }
-    }
-
-    setupErrorHandler() {
-        process.on('unhandledRejection', (error) => {
-            if (error?.code === 10008) {
-                console.warn('Aviso: Tentativa de interagir com uma mensagem que não existe mais');
-                if (error.url) console.warn('URL da requisição:', error.url);
-                return;
-            }
-            console.error('Erro não tratado:', error);
-        });
     }
 
     async cleanupRemovedUsersLevels() {
+        const { findOne, updateOne, COLLECTIONS } = require('../configuracoes/mongodb');
+        const guildId = process.env.GUILD_ID;
+        if (!guildId) return;
+
         try {
-            const { findOne, updateOne, COLLECTIONS } = require('../configuracoes/mongodb');
-            const guildId = process.env.GUILD_ID;
-            if (!guildId) return console.error('GUILD_ID não definido');
-            
             const guild = await this.client.guilds.fetch(guildId);
             await guild.members.fetch();
             const currentMemberIds = guild.members.cache.map(member => member.id);
@@ -127,9 +85,7 @@ class EventHandler {
                 { _id: 'niveis' },
                 { $set: { users: newUsersArray } }
             );
-        } catch (error) {
-            console.error('Erro durante a limpeza de níveis:', error);
-        }
+        } catch {}
     }
 }
 

@@ -5,16 +5,6 @@ module.exports = {
         .setName('ajuda-parceria')
         .setDescription('Exibe os requisitos para a formação de uma parceria.'),
     async execute(interaction) {
-        const requisitos = `
-**Requisitos para a formação de uma parceria:**
-1. Ter um servidor, de pelo menos 50 membros.
-2. Seguir as regras do Discord.
-3. Oferecer reciprocidade na divulgação.
-4. Estar disposto a manter uma comunicação aberta.
-
-Clique no botão abaixo e notifique sua intenção de parceria e você será respondido em breve.
-        `;
-
         const button = new ButtonBuilder()
             .setCustomId('notificar_responsavel')
             .setLabel('📥 Notificar Responsável')
@@ -22,17 +12,30 @@ Clique no botão abaixo e notifique sua intenção de parceria e você será res
 
         const row = new ActionRowBuilder().addComponents(button);
 
-        await interaction.reply({ content: requisitos, components: [row], flags: 'Ephemeral' });
+        await interaction.reply({
+            content: `**Requisitos para a formação de uma parceria:**
+1. Ter um servidor, de pelo menos 50 membros.
+2. Seguir as regras do Discord.
+3. Oferecer reciprocidade na divulgação.
+4. Estar disposto a manter uma comunicação aberta.
 
-        const filter = i => i.customId === 'notificar_responsavel' && i.user.id === interaction.user.id;
-        const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
+Clique no botão abaixo e notifique sua intenção de parceria e você será respondido em breve.`,
+            components: [row],
+            flags: 'Ephemeral'
+        });
+
+        const collector = interaction.channel.createMessageComponentCollector({
+            filter: i => i.customId === 'notificar_responsavel' && i.user.id === interaction.user.id,
+            time: 60000,
+            max: 1
+        });
 
         collector.on('collect', async i => {
-            if (i.customId !== 'notificar_responsavel') return;
+            const disabledRow = new ActionRowBuilder()
+                .addComponents(ButtonBuilder.from(button).setDisabled(true));
 
-            const responsavelId = '1199908820135194677';
             try {
-                const responsavel = await interaction.client.users.fetch(responsavelId);
+                const responsavel = await interaction.client.users.fetch('1199908820135194677');
                 const { user, member } = interaction;
 
                 const embed = new EmbedBuilder()
@@ -44,31 +47,20 @@ Clique no botão abaixo e notifique sua intenção de parceria e você será res
                     .addFields(
                         { name: '📋 Nome', value: user.username, inline: true },
                         { name: '🆔 ID', value: user.id, inline: true },
-                        { name: '📅 Conta Criada', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true }
-                    )
-                    .setFooter({ text: `ID: ${user.id}` })
+                        { name: '📅 Conta Criada', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+                        member?.joinedTimestamp ? {
+                            name: '📥 Entrou no Servidor',
+                            value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`,
+                            inline: true
+                        } : null
+                    ).filter(field => field)
                     .setTimestamp();
 
-                if (member?.joinedTimestamp) {
-                    embed.addFields({
-                        name: '📥 Entrou no Servidor',
-                        value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`,
-                        inline: true
-                    });
-                }
-
                 await responsavel.send({ embeds: [embed] });
-
-                const disabledButton = ButtonBuilder.from(button).setDisabled(true);
-                const updatedRow = new ActionRowBuilder().addComponents(disabledButton);
-
-                return i.update({ content: 'O responsável foi notificado com sucesso!', components: [updatedRow] });
-            } catch (error) {
-                const disabledButton = ButtonBuilder.from(button).setDisabled(true);
-                const updatedRow = new ActionRowBuilder().addComponents(disabledButton);
-
-                await i.update({ content: 'Não foi possível notificar o responsável. Tente novamente mais tarde.', components: [updatedRow] });
+                await i.update({ content: 'O responsável foi notificado com sucesso!', components: [disabledRow] });
+            } catch {
+                await i.update({ content: 'Não foi possível notificar o responsável.', components: [disabledRow] });
             }
         });
-    },
+    }
 };

@@ -10,21 +10,17 @@ class DatabaseHandler {
     async connect(botClient) {
         try {
             await this.mongoClient.connect();
-            console.log('Conectado ao MongoDB com sucesso!');
-            
             const db = this.mongoClient.db('ignis');
             const ignis = { database: db, client: botClient };
+            
             global.ignisContext = ignis;
+            global.cooldowns = new Map();
             
             await mongodb.initializeCollections();
             await boasVindasModule.initialize(botClient, ignis);
             
-            global.cooldowns = new Map();
-            global.voiceJoinTimes = new Map();
-            
             return ignis;
         } catch (error) {
-            console.error('Erro ao configurar o banco de dados:', error);
             throw error;
         }
     }

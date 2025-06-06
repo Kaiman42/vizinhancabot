@@ -6,107 +6,41 @@ const COLLECTIONS = {
   INVENTARIOS: 'inventarios'
 };
 
+// Função auxiliar para tratamento de erros
+const handleDbError = (operation, collection, error) => {
+  console.error(`Erro ao ${operation} em ${collection}:`, error);
+  throw error;
+};
+
 function getCollection(collectionName) {
-  if (!global.ignisContext || !global.ignisContext.database) {
-    throw new Error('Contexto de banco de dados não inicializado. Verifique se o MongoDB está conectado.');
+  if (!global.ignisContext?.database) {
+    throw new Error('Contexto de banco de dados não inicializado.');
   }
-  
   return global.ignisContext.database.collection(collectionName);
 }
 
-function getClient() {
-  if (!global.ignisContext) {
-    throw new Error('Contexto de banco de dados não inicializado.');
-  }
-  
-  return global.ignisContext.database.client;
-}
-
+// Operações básicas do banco de dados
 async function find(collectionName, query, options = {}) {
   try {
     const collection = getCollection(collectionName);
-    if (options.findOne) {
-      return await collection.findOne(query);
-    } else {
-      return await collection.find(query).toArray();
-    }
+    return options.findOne 
+      ? await collection.findOne(query)
+      : await collection.find(query).toArray();
   } catch (error) {
-    console.error(`Erro ao buscar em ${collectionName}:`, error);
-    throw error;
-  }
-}
-
-async function findOne(collectionName, query) {
-  return find(collectionName, query, { findOne: true });
-}
-
-async function insertOne(collectionName, document) {
-  try {
-    const collection = getCollection(collectionName);
-    return await collection.insertOne(document);
-  } catch (error) {
-    console.error(`Erro ao inserir em ${collectionName}:`, error);
-    throw error;
-  }
-}
-
-async function insertMany(collectionName, documents) {
-  try {
-    const collection = getCollection(collectionName);
-    return await collection.insertMany(documents);
-  } catch (error) {
-    console.error(`Erro ao inserir múltiplos em ${collectionName}:`, error);
-    throw error;
+    handleDbError('buscar', collectionName, error);
   }
 }
 
 async function updateOne(collectionName, query, update, options = {}) {
   try {
-    const collection = getCollection(collectionName);
-    return await collection.updateOne(query, update, options);
+    return await getCollection(collectionName).updateOne(query, update, options);
   } catch (error) {
-    console.error(`Erro ao atualizar em ${collectionName}:`, error);
-    throw error;
+    handleDbError('atualizar', collectionName, error);
   }
-}
-
-async function updateMany(collectionName, query, update, options = {}) {
-  try {
-    const collection = getCollection(collectionName);
-    return await collection.updateMany(query, update, options);
-  } catch (error) {
-    console.error(`Erro ao atualizar múltiplos em ${collectionName}:`, error);
-    throw error;
-  }
-}
-
-async function deleteOne(collectionName, query) {
-  try {
-    const collection = getCollection(collectionName);
-    return await collection.deleteOne(query);
-  } catch (error) {
-    console.error(`Erro ao deletar em ${collectionName}:`, error);
-    throw error;
-  }
-}
-
-async function deleteMany(collectionName, query) {
-  try {
-    const collection = getCollection(collectionName);
-    return await collection.deleteMany(query);
-  } catch (error) {
-    console.error(`Erro ao deletar múltiplos em ${collectionName}:`, error);
-    throw error;
-  }
-}
-
-async function upsert(collectionName, query, update) {
-  return await updateOne(collectionName, query, update, { upsert: true });
 }
 
 async function ensureCollection(collectionName, defaultDoc = null) {
   try {
-    // Validação para garantir que collectionName seja uma string não vazia
     if (!collectionName || typeof collectionName !== 'string') {
       throw new Error(`Nome de coleção inválido: ${collectionName}`);
     }
@@ -114,63 +48,49 @@ async function ensureCollection(collectionName, defaultDoc = null) {
     const db = global.ignisContext.database;
     const collections = await db.listCollections().toArray();
     
-    const collectionExists = collections.some(col => col.name === collectionName);
-    
-    if (!collectionExists) {
+    if (!collections.some(col => col.name === collectionName)) {
       await db.createCollection(collectionName);
-
-      
       if (defaultDoc) {
-        await insertOne(collectionName, defaultDoc);
+        await getCollection(collectionName).insertOne(defaultDoc);
       }
     }
-    
     return true;
   } catch (error) {
-    console.error(`Erro ao verificar/criar coleção ${collectionName}:`, error);
-    return false;
+    handleDbError('verificar/criar coleção', collectionName, error);
   }
 }
 
-async function close() {
-  console.log('Função close() em mongodb.js não faz nada. A conexão é gerenciada pelo index.js');
-}
+// Configurações iniciais
+const DEFAULT_CONFIGS = {
+  radios: { Kaiman: [] },
+  cores: {},
+  escopos: {},
+  patentes: {},
+  canais: {}
+};
 
 async function initializeCollections() {
   try {
-    // Iniciando coleção dadosUsuarios e seus documentos
+    // Inicializar coleção de dados dos usuários
     await ensureCollection(COLLECTIONS.DADOS_USUARIOS);
-    //await upsert(COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' }, { $setOnInsert: { _id: 'niveis' } });
-    await upsert(COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' }, { $setOnInsert: { _id: 'economias' } });
-    await upsert(COLLECTIONS.DADOS_USUARIOS, { _id: 'evitar_spam' }, { $setOnInsert: { _id: 'evitar_spam' } });
-    
-    // Iniciando coleção ignis (configuracoes) e seus documentos
-    await ensureCollection(COLLECTIONS.CONFIGURACOES);
-    
-    // Inicializar documento de rádios se não existir
-    const radiosDoc = await findOne(COLLECTIONS.CONFIGURACOES, { _id: 'radios' });
-    if (!radiosDoc) {
-      await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'radios' }, { 
-        $setOnInsert: { 
-          _id: 'radios',
-          Kaiman: [] 
-        } 
-      });
-    }
-    
-    // Inicializar outros documentos de configuração
-    await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'cores' }, { $setOnInsert: { _id: 'cores' } });
-    await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'escopos' }, { $setOnInsert: { _id: 'escopos' } });
-    await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'patentes' }, { $setOnInsert: { _id: 'patentes' } });
-    await upsert(COLLECTIONS.CONFIGURACOES, { _id: 'canais' }, { $setOnInsert: { _id: 'canais' } });
+    const userDataDocs = ['economias', 'evitar_spam'];
+    await Promise.all(userDataDocs.map(doc => 
+      updateOne(COLLECTIONS.DADOS_USUARIOS, 
+        { _id: doc }, 
+        { $setOnInsert: { _id: doc } }, 
+        { upsert: true }
+      )
+    ));
 
-    // Iniciar coleção da loja
-    await ensureCollection(COLLECTIONS.LOJA);
-    // Inserir arquivos/seções vazias se não existirem
-    await upsert(COLLECTIONS.LOJA, { _id: 'armas' }, { $setOnInsert: { _id: 'armas' } });
-    await upsert(COLLECTIONS.LOJA, { _id: 'armaduras' }, { $setOnInsert: { _id: 'armaduras' } });
-    await upsert(COLLECTIONS.LOJA, { _id: 'consumiveis' }, { $setOnInsert: { _id: 'consumiveis' } });
-    await upsert(COLLECTIONS.LOJA, { _id: 'pocoes' }, { $setOnInsert: { _id: 'pocoes' } });
+    // Inicializar configurações
+    await ensureCollection(COLLECTIONS.CONFIGURACOES);
+    await Promise.all(Object.entries(DEFAULT_CONFIGS).map(([config, defaultValue]) =>
+      updateOne(COLLECTIONS.CONFIGURACOES,
+        { _id: config },
+        { $setOnInsert: { _id: config, ...defaultValue } },
+        { upsert: true }
+      )
+    ));
 
     return true;
   } catch (error) {
@@ -179,32 +99,13 @@ async function initializeCollections() {
   }
 }
 
-// Função para acessar documentos específicos da coleção de configurações
-async function getConfig(configName) {
-  return await findOne(COLLECTIONS.CONFIGURACOES, { _id: configName });
-}
-
-// Função para atualizar ou criar configurações
-async function updateConfig(configName, update) {
-  return await upsert(COLLECTIONS.CONFIGURACOES, { _id: configName }, update);
-}
-
+// Exportar apenas o necessário
 module.exports = {
   COLLECTIONS,
   getCollection,
-  getClient,
   find,
-  findOne,
-  insertOne,
-  insertMany,
+  findOne: (collectionName, query) => find(collectionName, query, { findOne: true }),
   updateOne,
-  updateMany,
-  deleteOne,
-  deleteMany,
-  upsert,
   ensureCollection,
-  initializeCollections,
-  getConfig,
-  updateConfig,
-  close
+  initializeCollections
 };

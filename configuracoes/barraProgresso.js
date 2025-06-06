@@ -1,33 +1,19 @@
-function criarBarraProgresso(atual, maximo, opcoes = {}) {
-  const valorAtual = Number(atual) || 0;
-  const valorMaximo = Number(maximo) || 100;
+const criarBarraProgresso = (atual = 0, maximo = 100, {
+  comprimento = 15,
+  caracterPreenchido = '■',
+  caracterVazio = '□',
+  incluirPorcentagem = false
+} = {}) => {
+  if (maximo <= 0) throw new Error('O valor máximo deve ser maior que zero');
   
-  if (valorMaximo <= 0) throw new Error('O valor máximo deve ser maior que zero');
-  
-  const {
-    comprimento = 20,
-    caracterPreenchido = '█',
-    caracterVazio = '░',
-    incluirPorcentagem = false
-  } = opcoes;
-  
-  const progresso = Math.min(100, Math.round((valorAtual / valorMaximo) * 100));
+  const progresso = Math.min(100, Math.round((Number(atual) / Number(maximo)) * 100));
   const caracteresPreenchidos = Math.floor((progresso / 100) * comprimento);
   
-  const barra = '`' + Array(comprimento)
-    .fill()
+  const barra = '`' + Array(comprimento).fill()
     .map((_, i) => i < caracteresPreenchidos ? caracterPreenchido : caracterVazio)
     .join('') + (incluirPorcentagem ? ` ${progresso}%` : '') + '`';
   
-  return { barra, progresso, preenchido: caracteresPreenchidos, total: comprimento, atual: valorAtual, maximo: valorMaximo };
-}
+  return { barra, progresso, preenchido: caracteresPreenchidos, total: comprimento, atual, maximo };
+};
 
-function criarBarraProgressoXP(xpAtual, xpNecessario) {
-  return criarBarraProgresso(xpAtual, xpNecessario, {
-    comprimento: 15,
-    caracterPreenchido: '■',
-    caracterVazio: '□'
-  });
-}
-
-module.exports = { criarBarraProgresso, criarBarraProgressoXP };
+module.exports = { criarBarraProgresso };

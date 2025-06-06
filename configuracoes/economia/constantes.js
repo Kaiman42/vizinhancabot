@@ -1,5 +1,0 @@
-module.exports = {
-  DEFAULT_BALANCE: 0,
-  DAILY_AMOUNT: 100,
-  DAILY_COOLDOWN: 24 * 60 * 60 * 1000
-};

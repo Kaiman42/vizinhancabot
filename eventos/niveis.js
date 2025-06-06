@@ -2,7 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const { gerarCorAleatoria } = require('../configuracoes/randomColor.js');
 const database = require('../configuracoes/mongodb.js');
 const { criarBarraProgresso } = require('../configuracoes/barraProgresso.js');
-const economia = require('../configuracoes/economia/index.js');
+const economia = require('../configuracoes/economia.js');
 
 class DatabaseService {
   static async initializeCollections(ignisContext) {
@@ -113,7 +113,7 @@ class DatabaseService {
     };
   }
   
-  static async fetchConfiguracao(ignisContext, guildId) {
+  static async fetchConfiguracao(ignisContext) {
     try {
       await this.initializeCollections(ignisContext);
       return await database.findOne(database.COLLECTIONS.CONFIGURACOES, { _id: 'canais' });
@@ -124,41 +124,30 @@ class DatabaseService {
   
   static async getLeaderboard(ignisContext, limit = 10) {
     await this.initializeCollections(ignisContext);
-    
-    const mainDoc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' });
-    if (!mainDoc?.users?.length) return [];
-    
-    return [...mainDoc.users]
-      .sort((a, b) => b.level !== a.level ? b.level - a.level : b.xp - a.xp)
-      .slice(0, limit);
+    const doc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' });
+    return doc?.users?.length ? 
+      [...doc.users]
+        .sort((a, b) => b.level - a.level || b.xp - a.xp)
+        .slice(0, limit) 
+      : [];
   }
   
   static async addRoleToLevel(level, roleId, ignisContext) {
     try {
       await this.initializeCollections(ignisContext);
-      const cargoRankCollection = ignisContext.database.collection('cargosNivel');
+      const collection = ignisContext.database.collection('cargosNivel');
+      const cargo = { nivel: level, id: roleId };
+      const doc = await collection.findOne({});
       
-      const existingConfig = await cargoRankCollection.findOne({});
-      
-      if (existingConfig?.cargos) {
-        const cargoExistente = existingConfig.cargos.findIndex(cargo => cargo.nivel === level);
-        
-        if (cargoExistente >= 0) {
-          return await cargoRankCollection.updateOne(
-            {},
-            { $set: { [`cargos.${cargoExistente}.id`]: roleId } }
-          );
-        } else {
-          return await cargoRankCollection.updateOne(
-            {},
-            { $push: { cargos: { nivel: level, id: roleId } } }
-          );
-        }
-      } else {
-        return await cargoRankCollection.insertOne({
-          cargos: [{ nivel: level, id: roleId } ]
-        });
+      if (!doc?.cargos) {
+        return collection.insertOne({ cargos: [cargo] });
       }
+
+      const idx = doc.cargos.findIndex(c => c.nivel === level);
+      return collection.updateOne({}, idx >= 0 
+        ? { $set: { [`cargos.${idx}.id`]: roleId } }
+        : { $push: { cargos: cargo } }
+      );
     } catch (error) {
       console.error('Erro ao adicionar cargo a nível:', error);
     }
@@ -675,16 +664,14 @@ module.exports = {
   once: false,
   initialize,
   execute,
-  utils: {
-    getUserRankData: DatabaseService.getUserRankData.bind(DatabaseService),
-    calculateRequiredXP: LevelSystem.calculateRequiredXP.bind(LevelSystem),
-    getLeaderboard: DatabaseService.getLeaderboard.bind(DatabaseService),
-    addRoleToLevel: DatabaseService.addRoleToLevel.bind(DatabaseService),
-    removeRoleFromLevel: DatabaseService.removeRoleFromLevel.bind(DatabaseService),
-    handleRoleAssignment: RoleService.handleRoleAssignment.bind(RoleService),
-    initializeCollections: DatabaseService.initializeCollections.bind(DatabaseService),
-    findChannelById: LevelSystem.findChannelById.bind(LevelSystem),
-    fetchConfiguracao: DatabaseService.fetchConfiguracao.bind(DatabaseService),
-    handleVoiceStateUpdate: LevelSystem.handleVoiceStateUpdate.bind(LevelSystem)
-  }
+  getUserRankData: DatabaseService.getUserRankData.bind(DatabaseService),
+  calculateRequiredXP: LevelSystem.calculateRequiredXP.bind(LevelSystem),
+  getLeaderboard: DatabaseService.getLeaderboard.bind(DatabaseService),
+  addRoleToLevel: DatabaseService.addRoleToLevel.bind(DatabaseService),
+  removeRoleFromLevel: DatabaseService.removeRoleFromLevel.bind(DatabaseService),
+  handleRoleAssignment: RoleService.handleRoleAssignment.bind(RoleService),
+  initializeCollections: DatabaseService.initializeCollections.bind(DatabaseService),
+  findChannelById: LevelSystem.findChannelById.bind(LevelSystem),
+  fetchConfiguracao: DatabaseService.fetchConfiguracao.bind(DatabaseService),
+  handleVoiceStateUpdate: LevelSystem.handleVoiceStateUpdate.bind(LevelSystem)
 };

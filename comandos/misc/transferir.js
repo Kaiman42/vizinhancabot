@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('@discordjs/builders');
-const { transferirSaldo, obterSaldo } = require('../../configuracoes/economia/saldo.js');
+const { transferirSaldo, obterSaldo } = require('../../configuracoes/economia.js');
 const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
 
 module.exports = {
