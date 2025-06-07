@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const { findOne, upsert } = require('../../configuracoes/mongodb');
+const path = require('path');
+const { findOne, upsert } = require(path.resolve(__dirname, '../../mongodb.js'));
 
 // Constantes de erros
 const ERROS = {

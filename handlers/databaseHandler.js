@@ -1,5 +1,6 @@
 const { MongoClient } = require('mongodb');
-const mongodb = require('../configuracoes/mongodb');
+const path = require('path');
+const mongodb = require(path.resolve(__dirname, '../mongodb.js'));
 const boasVindasModule = require('../eventos/boas-vindas');
 
 class DatabaseHandler {

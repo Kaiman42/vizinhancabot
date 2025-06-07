@@ -1,7 +1,8 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
-const mongodb = require('../../configuracoes/mongodb.js');
+const path = require('path');
+const mongodb = require(path.resolve(__dirname, '../../mongodb.js'));
 const economia = require('../../configuracoes/economia.js');
 const { criarBarraProgresso } = require('../../configuracoes/barraProgresso.js');
 const erros = require('../../erros.json');

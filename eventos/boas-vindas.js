@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const { gerarCorAleatoria } = require('../configuracoes/randomColor.js');
-const database = require('../configuracoes/mongodb.js');
+const path = require('path');
+const database = require(path.resolve(__dirname, '../mongodb.js'));
 
 function initialize(client, ignisContext) {
   client.on('guildMemberUpdate', async (oldMember, newMember) => {

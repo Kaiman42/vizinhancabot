@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, Collection, EmbedBuilder } = require('discord.js');
 const { erros } = require('../../erros.json');
-const { find } = require('../../configuracoes/mongodb.js');
+const path = require('path');
+const { find } = require(path.resolve(__dirname, '../../mongodb.js'));
 
 // Função auxiliar para encontrar o ID do canal de logs
 async function getLogChannelId() {

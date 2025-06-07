@@ -1,4 +1,4 @@
-const { handleVoiceStateUpdate } = require('../comandos/misc/radio/estado');
+const { handleVoiceStateUpdate } = require('../comandos/misc/radio');
 const fs = require('fs');
 const path = require('path');
 
@@ -48,7 +48,7 @@ class EventHandler {
 
         if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
 
-        const radioCommand = require('../comandos/misc/radio/radio');
+        const radioCommand = require('../comandos/misc/radio');
         const customId = interaction.customId;
 
         if (!customId.startsWith('radio_') && customId !== 'radio_play') return;

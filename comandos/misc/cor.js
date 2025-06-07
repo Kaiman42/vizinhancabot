@@ -1,5 +1,6 @@
+const path = require('path');
 const { ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
-const { getCollection } = require('../../configuracoes/mongodb.js');
+const { getCollection } = require(path.resolve(__dirname, '../../mongodb.js'));
 
 const activeInstances = new Map();
 

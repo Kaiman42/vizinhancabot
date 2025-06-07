@@ -2,7 +2,8 @@ const { criarBarraProgresso } = require('../../configuracoes/barraProgresso.js')
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
 const economia = require('../../configuracoes/economia.js');
-const mongodb = require('../../configuracoes/mongodb.js');
+const path = require('path');
+const mongodb = require(path.resolve(__dirname, '../../mongodb.js'));
 
 const min = 42;
 const maximo = 2042;

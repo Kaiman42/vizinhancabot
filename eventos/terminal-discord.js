@@ -1,4 +1,5 @@
-const mongodb = require('../configuracoes/mongodb');
+const path = require('path');
+const mongodb = require(path.resolve(__dirname, '../mongodb.js'));
 
 module.exports = {
     name: 'ready',

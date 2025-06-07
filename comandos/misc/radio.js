@@ -1,15 +1,199 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
-const mongodb = require('../../../configuracoes/mongodb');
-const { RadioError, handleRadioError } = require('./erros');
-const { LIMITS } = require('./limites');
-const { checkRadioPermissions } = require('./permissoes');
-const { players, connections, radioMessages, radioOwners, setupEmptyCheck, clearRadioState } = require('./estado');
+const path = require('path');
+const mongodb = require(path.resolve(__dirname, '../../mongodb.js'));
+const { gerarCorAleatoria } = require(path.resolve(__dirname, '../../configuracoes/randomColor.js'));
+
+// Classes de erro
+class RadioError extends Error {
+    constructor(message, code) {
+        super(message);
+        this.name = 'RadioError';
+        this.code = code;
+    }
+}
+
+// Constantes e configurações
+const ERROS_RADIO = {
+    NENHUM_CANAL: '❌ Você precisa estar em um canal de voz para usar este comando.',
+    SEM_CARGO_DJ: '❌ Você precisa ter o cargo de DJ para usar este comando.',
+    SEM_PERMISSAO: '❌ Você não tem permissão para usar este comando.',
+    CANAL_ERRADO: (channelId) => `❌ Este comando só pode ser usado no canal <#${channelId}>.`,
+    RADIO_TOCANDO: '❌ O bot já está executando uma rádio no momento.',
+    CONTROLADOR_SOMENTE: (ownerId) => `❌ Apenas <@${ownerId}> pode controlar a rádio nesta sessão.`,
+    NENHUMA_RADIO: (country) => `❌ Nenhuma rádio encontrada para ${country}.`,
+    URL_INVALIDA: (name) => `❌ URL inválida para a rádio ${name}`,
+    ERRO_GENERICO: (error) => `❌ Ocorreu um erro: ${error.message}`
+};
+
+const LIMITS = {
+    REQUISICOES: {
+        max: 3,
+        window: 10000
+    },
+    TIMER_INATIVIDADE: 15000,
+    DEFAULT_VOLUME: 0.5,
+    VOLUME_MAX: 1.0
+};
+
+// Estados globais
+const players = new Map();
+const connections = new Map();
+const radioMessages = new Map();
+const radioOwners = new Map();
+const voiceTimeouts = new Map();
 
 // Cache das rádios
 let radioCache = null;
 let lastCacheTime = 0;
 const CACHE_DURATION = 300000; // 5 minutos
+
+// Funções de verificação e permissões
+async function hasDjRole(member) {
+    try {
+        const configDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'escopos' });
+        
+        if (!configDoc?.cargos?.dj) {
+            return true;
+        }
+        
+        return configDoc.cargos?.dj?.id ? member.roles.cache.has(configDoc.cargos.dj.id) : true;
+    } catch (error) {
+        console.error('Erro ao verificar cargo DJ:', error);
+        return true;
+    }
+}
+
+async function getChannels(guildId) {
+    try {
+        const configDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'canais' });
+        
+        if (!configDoc || !configDoc.categorias) {
+            return null;
+        }
+        
+        let botChannelId = null;
+        
+        if (configDoc.categorias) {
+            for (const categoria of configDoc.categorias) {
+                if (!categoria.canais) continue;
+                
+                for (const canal of categoria.canais) {
+                    if (canal.nome === 'bot') {
+                        botChannelId = canal.id;
+                        break;
+                    }
+                }
+                if (botChannelId) break;
+            }
+        }
+        
+        return { botChannelId };
+    } catch (error) {
+        console.error('Erro ao buscar canal de bot:', error);
+        return null;
+    }
+}
+
+async function checkRadioPermissions(interaction) {
+    // Verifica cargo DJ
+    if (!(await hasDjRole(interaction.member))) {
+        throw new RadioError(ERROS_RADIO.NO_DJ_ROLE);
+    }
+
+    // Obtém os canais antes de verificá-los
+    const channels = await getChannels(interaction.guild.id);
+
+    if (!channels) {
+      throw new RadioError('❌ Configuração de canais não encontrada.');
+    }
+    
+    if (!channels?.botChannelId) {
+        throw new RadioError('❌ Configuração de canais não encontrada.');
+    }
+
+    if (interaction.channel.id !== channels.botChannelId) {
+        throw new RadioError(ERROS_RADIO.CANAL_ERRADO(channels.botChannelId));
+    }
+
+    // Verifica canal de voz
+    if (!interaction.member.voice.channel) {
+        throw new RadioError(ERROS_RADIO.NENHUM_CANAL);
+    }
+
+    // Verifica dono da rádio
+    const guildId = interaction.guild.id;
+    if (radioOwners.has(guildId) && radioOwners.get(guildId) !== interaction.user.id) {
+        throw new RadioError(ERROS_RADIO.CONTROLADOR_SOMENTE(radioOwners.get(guildId)));
+    }
+
+    return { channels };
+}
+
+// Estado e gerenciamento do canal
+function isChannelEmpty(channel) {
+    return channel.members.filter(member => !member.user.bot).size === 0;
+}
+
+function setupEmptyCheck(guildId, channelId, client) {
+    if (voiceTimeouts.has(guildId)) {
+        clearTimeout(voiceTimeouts.get(guildId));
+    }
+
+    const channel = client.channels.cache.get(channelId);
+    if (channel && isChannelEmpty(channel)) {
+        const timeout = setTimeout(async () => {
+            try {
+                const refreshedChannel = await client.channels.fetch(channelId);
+                if (refreshedChannel && isChannelEmpty(refreshedChannel)) {
+                    const channels = await getChannels(guildId);
+                    if (channels?.botChannelId) {
+                        const botChannel = await client.channels.fetch(channels.botChannelId);
+                        await botChannel.send('📻 A rádio foi desligada automaticamente por inatividade.');
+                    }
+                    await stopRadio(guildId, null, true);
+                }
+            } catch (error) {
+                console.error('Erro ao verificar canal vazio:', error);
+            }
+        }, LIMITS.TIMER_INATIVIDADE);
+        
+        voiceTimeouts.set(guildId, timeout);
+    }
+}
+
+function clearRadioState(guildId) {
+    players.delete(guildId);
+    connections.delete(guildId);
+    radioOwners.delete(guildId);
+    radioMessages.delete(guildId);
+    if (voiceTimeouts.has(guildId)) {
+        clearTimeout(voiceTimeouts.get(guildId));
+        voiceTimeouts.delete(guildId);
+    }
+}
+
+async function handleVoiceStateUpdate(oldState, newState) {
+    const guildId = oldState.guild.id;
+    
+    if (!connections.has(guildId)) return;
+
+    const connection = connections.get(guildId);
+    const channelId = connection.joinConfig.channelId;
+
+    const channel = oldState.guild.channels.cache.get(channelId);
+    if (!channel) return;
+
+    if (newState.channelId === channelId) {
+        if (!newState.member.user.bot && voiceTimeouts.has(guildId)) {
+            clearTimeout(voiceTimeouts.get(guildId));
+            voiceTimeouts.delete(guildId);
+        }
+    }
+    else if (oldState.channelId === channelId && isChannelEmpty(channel)) {
+        setupEmptyCheck(guildId, channelId, oldState.client);
+    }
+}
 
 // Funções auxiliares
 async function getCachedRadios() {
@@ -34,6 +218,25 @@ async function getCachedRadios() {
         lastCacheTime = now;
     }
     return radioCache;
+}
+
+async function handleRadioError(error, interaction) {
+    console.error('Erro na rádio:', error);
+    try {
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({
+                content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
+                ephemeral: true
+            });
+        } else {
+            await interaction.reply({
+                content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
+                ephemeral: true
+            });
+        }
+    } catch (err) {
+        console.error("Failed to send error message:", err);
+    }
 }
 
 // Gerenciamento de conexão e player
@@ -62,7 +265,22 @@ async function setupVoiceConnection(interaction) {
     return { connection, player, voiceChannel };
 }
 
-const { gerarCorAleatoria } = require('../../../configuracoes/randomColor');
+function validateRadioSelection(radios, country, radioIndex) {
+    if (!radios[country] || !Array.isArray(radios[country])) {
+        throw new RadioError(ERROS_RADIO.NENHUMA_RADIO(country));
+    }
+
+    if (radioIndex < 0 || radioIndex >= radios[country].length) {
+        throw new RadioError(ERROS_RADIO.CANAL_ERRADO(radioIndex));
+    }
+
+    const radio = radios[country][radioIndex];
+    if (!radio.url) {
+        throw new RadioError(ERROS_RADIO.URL_INVALIDA(radio.name));
+    }
+
+    return radio;
+}
 
 // Criação de embed para rádio
 function createRadioEmbed(radio, interaction, radioIndex, totalRadios, voiceChannel) {
@@ -361,5 +579,6 @@ module.exports = {
     },
 
     handleButton,
-    handlePlay
+    handlePlay,
+    handleVoiceStateUpdate
 };

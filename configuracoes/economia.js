@@ -1,4 +1,5 @@
-const mongodb = require('./mongodb');
+const path = require('path');
+const mongodb = require(path.resolve(__dirname, '../mongodb.js'));
 
 const ECONOMIA = {
   DEFAULT_BALANCE: 0,
