@@ -2,8 +2,7 @@ const COLLECTIONS = {
   DADOS_USUARIOS: 'dadosUsuarios',
   CONFIGURACOES: 'configuracoes',
   TEMPORARIO: 'temporario',
-  LOJA: 'loja',
-  INVENTARIOS: 'inventarios'
+  NIVEIS: 'niveis' // Nova coleção para progressão de nível
 };
 
 // Função auxiliar para tratamento de erros
@@ -81,6 +80,9 @@ async function initializeCollections() {
         { upsert: true }
       )
     ));
+
+    // Inicializar coleção de níveis
+    await ensureCollection(COLLECTIONS.NIVEIS);
 
     // Inicializar configurações
     await ensureCollection(COLLECTIONS.CONFIGURACOES);

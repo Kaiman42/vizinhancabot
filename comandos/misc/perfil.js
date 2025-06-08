@@ -155,21 +155,38 @@ async function getUserRoles(member) {
 }
 
 async function getNivelInfo(ignis, targetUser, member) {
-    const defaultReturn = { rankDisplay: 'Nenhum', cargoNome: 'Nenhum' };
-    if (!ignis?.database) return defaultReturn;
-
     try {
-        const mainDoc = await ignis.database.collection('dadosUsuarios').findOne({ _id: 'niveis' });
-        const userData = mainDoc?.users?.find(user => user.userId === targetUser.id);
-        
-        if (!userData || (!userData.level && !userData.xp)) return defaultReturn;
+        const niveisDoc = await mongodb.findOne(
+            mongodb.COLLECTIONS.DADOS_USUARIOS,
+            { _id: 'niveis' }
+        );
 
-        const currentLevel = userData.level || 0;
-        const currentXP = userData.xp || 0;
+        console.log('Documento de níveis encontrado:', niveisDoc);
+
+        if (!niveisDoc) {
+            console.log('Documento de níveis não encontrado');
+            return { rankDisplay: 'Nenhum', cargoNome: 'Nenhum' };
+        }
+
+        const userData = niveisDoc.users?.find(user => user.userId === targetUser.id);
+        console.log('Dados do usuário encontrados:', userData);
+        
+        // Verifica se os dados do usuário existem e se tem level OU xp
+        if (!userData || (!userData.level && userData.level !== 0 && !userData.xp && userData.xp !== 0)) {
+            console.log('Dados do usuário não encontrados ou inválidos');
+            return { rankDisplay: 'Nenhum', cargoNome: 'Nenhum' };
+        }
+
+        const currentLevel = userData.level ?? 0;
+        const currentXP = userData.xp ?? 0;
+        console.log(`Nível atual: ${currentLevel}, XP atual: ${currentXP}`);
+
         const xpForNextLevel = require('../../eventos/niveis.js')?.utils?.calculateRequiredXP?.(currentLevel) || (currentLevel + 1) * 1000;
+        console.log('XP necessário para o próximo nível:', xpForNextLevel);
 
         const { barra, progresso } = criarBarraProgresso(currentXP, xpForNextLevel);
         const rankDisplay = `Nível ${currentLevel} (${progresso}%)\n\`${barra}\``;
+        console.log('Display do rank gerado:', rankDisplay);
 
         const patentesDoc = await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'patentes' });
         const cargoNivelApropriado = patentesDoc?.cargos
@@ -180,7 +197,8 @@ async function getNivelInfo(ignis, targetUser, member) {
             rankDisplay,
             cargoNome: cargoNivelApropriado ? `<@&${cargoNivelApropriado.id}>` : 'Nenhum'
         };
-    } catch {
+    } catch (error) {
+        console.error('Erro ao buscar informações de nível:', error);
         return { rankDisplay: 'Sistema indisponível', cargoNome: 'Nenhum' };
     }
 }

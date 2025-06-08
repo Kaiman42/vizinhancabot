@@ -1,4 +1,4 @@
-const { handleVoiceStateUpdate } = require('../comandos/misc/radio');
+const { handleVoiceStateUpdate } = require('../eventos/niveis');
 const fs = require('fs');
 const path = require('path');
 
@@ -37,7 +37,9 @@ class EventHandler {
     }
 
     async handleVoiceState(oldState, newState) {
-        await handleVoiceStateUpdate(oldState, newState).catch(() => {});
+        // Passe o ignisContext se necessário
+        const ignisContext = global.ignisContext;
+        await handleVoiceStateUpdate(oldState, newState, ignisContext).catch(console.error);
     }
 
     async handleInteraction(interaction) {
@@ -67,7 +69,7 @@ class EventHandler {
     }
 
     async cleanupRemovedUsersLevels() {
-        const { findOne, updateOne, COLLECTIONS } = require('../configuracoes/mongodb');
+        const { findOne, updateOne, COLLECTIONS } = require('../mongodb');
         const guildId = process.env.GUILD_ID;
         if (!guildId) return;
 

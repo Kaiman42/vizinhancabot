@@ -5,102 +5,133 @@ const database = require(path.resolve(__dirname, '../mongodb.js'));
 const { criarBarraProgresso } = require('../configuracoes/barraProgresso.js');
 const economia = require('../configuracoes/economia.js');
 
+// --- Funções utilitárias centralizadas ---
+function logError(context, error) {
+  console.error(`[${context}]`, error);
+}
+
+function normalizeUserData(userData) {
+  return {
+    userId: userData?.userId || '',
+    username: userData?.username || '',
+    xp: Number(userData?.xp) || 0,
+    level: Number(userData?.level) || 0,
+    lastRole: userData?.lastRole || null
+  };
+}
+
+async function ensureNiveisDoc() {
+  // Busca o documento do usuário na coleção 'niveis', onde cada documento é um usuário
+  // O _id do documento será o userId
+  // Esta função não faz mais sentido buscar um array de users, mas sim um documento por usuário
+  throw new Error('Função obsoleta: utilize DatabaseService.getUserRankData diretamente com a coleção NIVEIS');
+}
+
+async function ensureUsername(userData, userId, ignisContext, mainDoc = null) {
+  if (!userData.username) {
+    try {
+      const user = await ignisContext.client.users.fetch(userId);
+      if (user) {
+        userData.username = user.username;
+        if (mainDoc) {
+          const userObj = mainDoc.users.find(u => u.userId === userId);
+          if (userObj) {
+            await database.updateOne(
+              database.COLLECTIONS.DADOS_USUARIOS,
+              { _id: 'niveis' },
+              { $set: { [`users.${mainDoc.users.indexOf(userObj)}.username`]: user.username } }
+            );
+          }
+        }
+      }
+    } catch (e) {
+      logError('ensureUsername', e);
+    }
+  }
+  return userData;
+}
+
+function getCargoApropriado(cargos, level, cargosOrdenadosCache = null) {
+  const lista = cargosOrdenadosCache || [...cargos].sort((a, b) => b.nivel - a.nivel);
+  return lista.find(c => level >= c.nivel) || null;
+}
+
+async function removeRolesIfPresent(member, cargosIds) {
+  const rolesToRemove = cargosIds.filter(cargoId => member.roles.cache.has(cargoId));
+  if (rolesToRemove.length) await member.roles.remove(rolesToRemove);
+}
+
+function findChannel(configuracao, { id, nome }) {
+  if (!configuracao?.categorias) return null;
+  for (const categoria of configuracao.categorias) {
+    if (!Array.isArray(categoria.canais)) continue;
+    if (id) {
+      const canal = categoria.canais.find(c => c.id === id);
+      if (canal) return canal;
+    }
+    if (nome) {
+      const canal = categoria.canais.find(c => c.nome === nome);
+      if (canal) return canal;
+    }
+  }
+  return null;
+}
+
+function createLevelUpEmbed(user, newLevel, recompensaTotal, barraRecompensa) {
+  return new EmbedBuilder()
+    .setTitle('Promoção de nível')
+    .setDescription(`Novo nível: **${newLevel}**`)
+    .addFields({ name: `Ganho: ${recompensaTotal} Gramas`, value: `\`${barraRecompensa.barra}\`` })
+    .setColor(gerarCorAleatoria())
+    .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+    .setTimestamp();
+}
+// --- Fim das funções utilitárias ---
+
 class DatabaseService {
   static async initializeCollections(ignisContext) {
     if (!ignisContext?.database) return;
-    await database.ensureCollection(database.COLLECTIONS.DADOS_USUARIOS);
-    await database.upsert(
-      database.COLLECTIONS.DADOS_USUARIOS,
-      { _id: 'niveis' },
-      { $setOnInsert: { _id: 'niveis', users: [] } }
-    );
+    await database.ensureCollection(database.COLLECTIONS.NIVEIS);
   }
 
   static async getUserRankData(userId, ignisContext) {
     await this.initializeCollections(ignisContext);
-    const mainDoc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' });
-    if (!mainDoc) {
-      const newUserData = this.createNewUserData(userId);
-      await database.upsert(
-        database.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'niveis' },
-        { $set: { users: [newUserData] } }
-      ).catch(() => {});
-      try {
-        const user = await ignisContext.client.users.fetch(userId);
-        if (user) newUserData.username = user.username;
-      } catch {}
-      return newUserData;
-    }
-    if (!Array.isArray(mainDoc.users)) {
-      await database.updateOne(
-        database.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'niveis' },
-        { $set: { users: [] } }
-      );
-      mainDoc.users = [];
-    }
-    const userIndex = mainDoc.users.findIndex(user => user?.userId === userId);
-    if (userIndex >= 0) {
-      const userData = this.normalizeUserData(mainDoc.users[userIndex]);
-      if (!userData.username) {
-        try {
-          const user = await ignisContext.client.users.fetch(userId);
-          if (user) {
-            userData.username = user.username;
-            await database.updateOne(
-              database.COLLECTIONS.DADOS_USUARIOS,
-              { _id: 'niveis' },
-              { $set: { [`users.${userIndex}.username`]: user.username } }
-            );
-          }
-        } catch {}
-      }
+    // Busca o documento do usuário na coleção NIVEIS
+    let userDoc = await database.findOne(database.COLLECTIONS.NIVEIS, { _id: userId });
+    if (userDoc) {
+      let userData = normalizeUserData(userDoc);
+      userData = await ensureUsername(userData, userId, ignisContext);
       return userData;
     }
-    const newUserData = this.createNewUserData(userId);
+    // Novo usuário
+    let newUserData = normalizeUserData({ userId });
     try {
       const user = await ignisContext.client.users.fetch(userId);
       if (user) newUserData.username = user.username;
-    } catch {}
-    await database.updateOne(
-      database.COLLECTIONS.DADOS_USUARIOS,
-      { _id: 'niveis' },
-      { $push: { users: newUserData } }
-    ).catch(() => {});
+    } catch (e) {
+      logError('getUserRankData', e);
+    }
+    // Insere novo documento na coleção NIVEIS
+    await database.getCollection(database.COLLECTIONS.NIVEIS).insertOne({ ...newUserData, _id: userId });
     return newUserData;
-  }
-
-  static createNewUserData(userId) {
-    return { userId, username: '', xp: 0, level: 0, lastRole: null, lastUpdated: new Date().toISOString() };
-  }
-
-  static normalizeUserData(userData) {
-    if (!userData) return this.createNewUserData('');
-    return {
-      userId: userData.userId || '',
-      username: userData.username || '',
-      xp: userData.xp || 0,
-      level: userData.level || 0,
-      lastRole: userData.lastRole || null,
-      lastUpdated: userData.lastUpdated || new Date().toISOString()
-    };
   }
 
   static async fetchConfiguracao(ignisContext) {
     try {
       await this.initializeCollections(ignisContext);
       return await database.findOne(database.COLLECTIONS.CONFIGURACOES, { _id: 'canais' });
-    } catch {
+    } catch (e) {
+      logError('fetchConfiguracao', e);
       return null;
     }
   }
 
   static async getLeaderboard(ignisContext, limit = 10) {
     await this.initializeCollections(ignisContext);
-    const doc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' });
-    return doc?.users?.length ?
-      [...doc.users].sort((a, b) => b.level - a.level || b.xp - a.xp).slice(0, limit) : [];
+    // Busca todos os documentos da coleção NIVEIS
+    const users = await database.find(database.COLLECTIONS.NIVEIS, {});
+    return users.length ?
+      users.map(normalizeUserData).sort((a, b) => b.level - a.level || b.xp - a.xp).slice(0, limit) : [];
   }
 
   static async addRoleToLevel(level, roleId, ignisContext) {
@@ -110,13 +141,13 @@ class DatabaseService {
       const cargo = { nivel: level, id: roleId };
       const doc = await collection.findOne({});
       if (!doc?.cargos) return collection.insertOne({ cargos: [cargo] });
-      const idx = doc.cargos.findIndex(c => c.nivel === level);
-      return collection.updateOne({}, idx >= 0
-        ? { $set: { [`cargos.${idx}.id`]: roleId } }
+      const cargoObj = doc.cargos.find(c => c.nivel === level);
+      return collection.updateOne({}, cargoObj
+        ? { $set: { [`cargos.${doc.cargos.indexOf(cargoObj)}.id`]: roleId } }
         : { $push: { cargos: cargo } }
       );
     } catch (error) {
-      console.error('Erro ao adicionar cargo a nível:', error);
+      logError('addRoleToLevel', error);
     }
   }
 
@@ -128,11 +159,19 @@ class DatabaseService {
         { $pull: { cargos: { nivel: level } } }
       );
     } catch (error) {
-      console.error('Erro ao remover cargo de nível:', error);
+      logError('removeRoleFromLevel', error);
     }
   }
 
   static async updateUserXP(userId, userData, xpGained, ignisContext) {
+    if (userData.level >= 80) {
+      return {
+        newLevel: userData.level,
+        previousLevel: userData.level,
+        newXP: userData.xp,
+        leveledUp: false
+      };
+    }
     if (!xpGained || isNaN(xpGained) || xpGained <= 0) {
       return {
         newLevel: userData.level,
@@ -141,44 +180,31 @@ class DatabaseService {
         leveledUp: false
       };
     }
-    const requiredForCurrentLevel = LevelSystem.calculateRequiredXP(userData.level);
     let newXP = userData.xp + xpGained;
     let newLevel = userData.level;
     let leveledUp = false;
-    if (newXP >= requiredForCurrentLevel) {
+    let requiredForCurrentLevel = LevelSystem.calculateRequiredXP(newLevel);
+    while (newXP >= requiredForCurrentLevel && newLevel < 80) {
+      newXP -= requiredForCurrentLevel;
       newLevel++;
       leveledUp = true;
-      newXP -= requiredForCurrentLevel;
-      let nextLevelRequired = LevelSystem.calculateRequiredXP(newLevel);
-      while (newXP >= nextLevelRequired) {
-        newLevel++;
-        newXP -= nextLevelRequired;
-        nextLevelRequired = LevelSystem.calculateRequiredXP(newLevel);
-      }
+      requiredForCurrentLevel = LevelSystem.calculateRequiredXP(newLevel);
     }
-    const mainDoc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' });
-    if (!mainDoc) {
-      return {
-        newLevel: userData.level,
-        previousLevel: userData.level,
-        newXP: userData.xp,
-        leveledUp: false
-      };
+    // Se chegou ao 80, trava o XP
+    if (newLevel >= 80) {
+      newXP = 0;
+      newLevel = 80;
     }
-    const userIndex = mainDoc.users.findIndex(user => user.userId === userId);
-    if (userIndex >= 0) {
-      await database.updateOne(
-        database.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'niveis' },
-        {
-          $set: {
-            [`users.${userIndex}.xp`]: newXP,
-            [`users.${userIndex}.level`]: newLevel,
-            [`users.${userIndex}.lastUpdated`]: new Date().toISOString()
-          }
+    await database.updateOne(
+      database.COLLECTIONS.NIVEIS,
+      { _id: userId },
+      {
+        $set: {
+          xp: newXP,
+          level: newLevel
         }
-      );
-    }
+      }
+    );
     return {
       newLevel,
       previousLevel: userData.level,
@@ -191,9 +217,15 @@ class DatabaseService {
     try {
       await database.ensureCollection(database.COLLECTIONS.TEMPORARIO);
       await database.insertOne(database.COLLECTIONS.TEMPORARIO, {
-        type: 'levelUp', userId, username, level: newLevel, guildId
+        type: 'levelUp',
+        userId,
+        username,
+        level: newLevel,
+        guildId
       });
-    } catch {}
+    } catch (e) {
+      logError('recordLevelUpHistory', e);
+    }
   }
 }
 
@@ -202,27 +234,21 @@ class LevelSystem {
   static voiceUsers = new Map();
 
   static calculateRequiredXP(level) {
-    return level === 0 ? 250 : Math.round(250 * Math.pow(1.5, level));
+    // Até o nível 80, aumenta de forma randômica e progressiva
+    if (level >= 80) return Infinity;
+    // Exigência base aumenta de forma não linear e com fator randômico
+    const base = 200 + (level ** 1.5) * 12;
+    const variacao = Math.floor(Math.random() * (40 + level * 2));
+    return Math.floor(base + variacao);
   }
 
   static findChannelById(channelId, configuracao) {
-    if (!configuracao?.categorias) return null;
-    for (const categoria of configuracao.categorias) {
-      if (!Array.isArray(categoria.canais)) continue;
-      const canal = categoria.canais.find(c => c.id === channelId);
-      if (canal) return canal;
-    }
-    return null;
+    return findChannel(configuracao, { id: channelId });
   }
 
   static findEscadariaChannelId(configuracao) {
-    if (!configuracao?.categorias) return null;
-    for (const categoria of configuracao.categorias) {
-      if (!Array.isArray(categoria.canais)) continue;
-      const escadariaCanal = categoria.canais.find(canal => canal.nome === 'escadaria');
-      if (escadariaCanal) return escadariaCanal.id;
-    }
-    return null;
+    const canal = findChannel(configuracao, { nome: 'escadaria' });
+    return canal ? canal.id : null;
   }
 
   static isSpamMessage(message) {
@@ -260,27 +286,33 @@ class LevelSystem {
     return false;
   }
 
-  static calculateMessageXP(message) {
+  static calculateMessageXP(message, userLevel = 0) {
     const userId = message.author.id, now = Date.now();
     if (this.isSpamMessage(message)) return 0;
     if (this.messageCooldowns.has(userId) && now < this.messageCooldowns.get(userId)) return 0;
-    const xpGained = 25 + Math.floor(Math.random() * 26);
+    // XP randômico, mas menor para níveis altos
+    let minXP = 10, maxXP = 35;
+    if (userLevel >= 60) { minXP = 5; maxXP = 15; }
+    else if (userLevel >= 40) { minXP = 7; maxXP = 22; }
+    else if (userLevel >= 20) { minXP = 8; maxXP = 28; }
+    const xpGained = Math.floor(Math.random() * (maxXP - minXP + 1)) + minXP;
     this.messageCooldowns.set(userId, now + 15000);
     return xpGained;
   }
 
   static setupVoiceXPTimer(ignisContext) {
     setInterval(async () => {
+      const promises = [];
       for (const [userId, userData] of this.voiceUsers.entries()) {
-        try {
-          if (!userData.guild) continue;
+        if (!userData.guild) continue;
+        promises.push((async () => {
           const configuracao = await DatabaseService.fetchConfiguracao(ignisContext, userData.guild.id);
-          if (!configuracao) continue;
+          if (!configuracao) return;
           const now = Date.now();
-          if (now - userData.joinTime < 30000) continue;
-          if (userData.lastXpTime && now - userData.lastXpTime < 15000) continue;
+          if (now - userData.joinTime < 30000) return;
+          if (userData.lastXpTime && now - userData.lastXpTime < 15000) return;
           const userRankData = await DatabaseService.getUserRankData(userId, ignisContext);
-          const voiceXP = 15 + Math.floor(Math.random() * 51);
+          const voiceXP = 8;
           userData.lastXpTime = now;
           this.voiceUsers.set(userId, userData);
           const { newLevel, previousLevel } = await DatabaseService.updateUserXP(
@@ -294,10 +326,9 @@ class LevelSystem {
               userData.member, newLevel, userRankData.lastRole, ignisContext
             );
           }
-        } catch (error) {
-          console.error(`Erro ao processar XP por voz: ${error}`);
-        }
+        })());
       }
+      await Promise.all(promises);
     }, 5000);
   }
 
@@ -310,19 +341,6 @@ class LevelSystem {
     }
     const configuracao = await DatabaseService.fetchConfiguracao(ignisContext, newState.guild.id);
     if (!configuracao) return;
-    if (this.voiceUsers.has(userId)) {
-      const userData = this.voiceUsers.get(userId);
-      if (userData.channelId !== newState.channelId) {
-        this.voiceUsers.set(userId, {
-          channelId: newState.channelId,
-          joinTime: Date.now(),
-          member: newState.member,
-          guild: newState.guild,
-          lastXpTime: null
-        });
-      }
-      return;
-    }
     this.voiceUsers.set(userId, {
       channelId: newState.channelId,
       joinTime: Date.now(),
@@ -344,36 +362,23 @@ class NotificationService {
         comprimento: 15, caracterPreenchido: '■', caracterVazio: '□', incluirPorcentagem: true
       });
       const escadariaChannelId = LevelSystem.findEscadariaChannelId(configuracao);
+      const embed = createLevelUpEmbed(user, newLevel, recompensaTotal, barraRecompensa);
       if (escadariaChannelId) {
         try {
           const escadariaChannel = await guild.channels.fetch(escadariaChannelId);
           if (escadariaChannel) {
-            const embed = new EmbedBuilder()
-              .setTitle('Promoção de nível')
-              .setDescription(`Novo nível: **${newLevel}**`)
-              .addFields({ name: `Ganho: ${recompensaTotal} Gramas`, value: `\`${barraRecompensa.barra}\`` })
-              .setColor(gerarCorAleatoria())
-              .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-              .setTimestamp();
             await escadariaChannel.send({ content: `${user}`, embeds: [embed] });
             return;
           }
         } catch (error) {
-          console.error('Erro ao enviar notificação para o canal escadaria:', error);
+          logError('sendLevelUpNotification:escadaria', error);
         }
       }
       if (userOrMember.channel) {
-        const embed = new EmbedBuilder()
-          .setTitle('Promoção de nível')
-          .setDescription(`Novo nível: **${newLevel}**`)
-          .addFields({ name: `Ganho: ${recompensaTotal} Gramas`, value: `\`${barraRecompensa.barra}\`` })
-          .setColor(gerarCorAleatoria())
-          .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-          .setTimestamp();
         await userOrMember.channel.send({ content: `${user}`, embeds: [embed] });
       }
     } catch (error) {
-      console.error('Erro ao enviar notificação de nível:', error);
+      logError('sendLevelUpNotification', error);
     }
   }
 }
@@ -381,79 +386,115 @@ class NotificationService {
 class RoleService {
   static async handleRoleAssignment(member, level, lastRole, ignisContext) {
     try {
+      let cargos = null;
       const patentesDoc = await database.findOne(database.COLLECTIONS.CONFIGURACOES, { _id: 'patentes' });
-      if (patentesDoc?.cargos && Array.isArray(patentesDoc.cargos)) {
-        const cargosOrdenados = [...patentesDoc.cargos].sort((a, b) => b.nivel - a.nivel);
-        let cargoApropriado = null;
-        for (const cargo of cargosOrdenados) {
-          if (level >= cargo.nivel) { cargoApropriado = cargo; break; }
+      if (Array.isArray(patentesDoc?.cargos)) {
+        cargos = patentesDoc.cargos;
+      } else {
+        const cargosNivelDoc = await ignisContext.database.collection('cargosNivel').findOne({});
+        if (Array.isArray(cargosNivelDoc?.cargos)) {
+          cargos = cargosNivelDoc.cargos;
+        } else {
+          const [roleConfig] = await ignisContext.database.collection('cargoRank')
+            .find({ level: { $lte: level } })
+            .sort({ level: -1 })
+            .limit(1)
+            .toArray();
+          if (!roleConfig) return null;
+          if (lastRole === roleConfig.roleId) return lastRole;
+          if (lastRole && member.roles.cache.has(lastRole)) await removeRolesIfPresent(member, [lastRole]);
+          await member.roles.add(roleConfig.roleId);
+          await this.updateUserRole(member.id, roleConfig.roleId, member.user.username, ignisContext);
+          return roleConfig.roleId;
         }
-        if (!cargoApropriado || lastRole === cargoApropriado.id) return lastRole;
-        const cargosIds = patentesDoc.cargos.map(c => c.id);
-        for (const cargoId of cargosIds) {
-          if (member.roles.cache.has(cargoId)) await member.roles.remove(cargoId);
-        }
-        await member.roles.add(cargoApropriado.id);
-        await this.updateUserRole(member.id, cargoApropriado.id, member.user.username, ignisContext);
-        return cargoApropriado.id;
       }
-      const cargosNivelCollection = ignisContext.database.collection('cargosNivel');
-      const cargosNivelDoc = await cargosNivelCollection.findOne({});
-      if (!cargosNivelDoc?.cargos || !Array.isArray(cargosNivelDoc.cargos)) {
-        const roleConfigs = await ignisContext.database.collection('cargoRank')
-          .find({ level: { $lte: level } })
-          .sort({ level: -1 })
-          .limit(1)
-          .toArray();
-        if (roleConfigs.length === 0) return null;
-        const highestRole = roleConfigs[0].roleId;
-        if (lastRole === highestRole) return lastRole;
-        if (lastRole && member.roles.cache.has(lastRole)) await member.roles.remove(lastRole);
-        await member.roles.add(highestRole);
-        await this.updateUserRole(member.id, highestRole, member.user.username, ignisContext);
-        return highestRole;
-      }
-      const cargosOrdenados = [...cargosNivelDoc.cargos].sort((a, b) => b.nivel - a.nivel);
-      let cargoApropriado = null;
-      for (const cargo of cargosOrdenados) {
-        if (level >= cargo.nivel) { cargoApropriado = cargo; break; }
-      }
+      const cargoApropriado = getCargoApropriado(cargos, level);
       if (!cargoApropriado || lastRole === cargoApropriado.id) return lastRole;
-      const cargosIds = cargosNivelDoc.cargos.map(c => c.id);
-      for (const cargoId of cargosIds) {
-        if (member.roles.cache.has(cargoId)) await member.roles.remove(cargoId);
-      }
+      const cargosIds = cargos.map(c => c.id);
+      await removeRolesIfPresent(member, cargosIds);
       await member.roles.add(cargoApropriado.id);
       await this.updateUserRole(member.id, cargoApropriado.id, member.user.username, ignisContext);
       return cargoApropriado.id;
     } catch (error) {
-      console.error('Erro ao atribuir cargo de nível:', error);
+      logError('handleRoleAssignment', error);
       return lastRole;
     }
   }
 
   static async updateUserRole(userId, roleId, username, ignisContext) {
     try {
-      const mainDoc = await database.findOne(database.COLLECTIONS.DADOS_USUARIOS, { _id: 'niveis' });
-      if (!mainDoc) return;
-      const userIndex = mainDoc.users.findIndex(user => user.userId === userId);
-      if (userIndex >= 0) {
-        await database.updateOne(
-          database.COLLECTIONS.DADOS_USUARIOS,
-          { _id: 'niveis' },
-          { $set: { [`users.${userIndex}.lastRole`]: roleId, [`users.${userIndex}.username`]: username } }
-        );
-      }
+      // Atualiza o documento do usuário na coleção NIVEIS
+      await database.updateOne(
+        database.COLLECTIONS.NIVEIS,
+        { _id: userId },
+        { $set: { lastRole: roleId, username } }
+      );
     } catch (error) {
-      console.error('Erro ao atualizar cargo do usuário no banco de dados:', error);
+      logError('updateUserRole', error);
     }
   }
 }
 
+// Verificação diária para remover usuários que não estão mais em nenhum servidor
+async function verificarUsuariosInativos(client, ignisContext) {
+  try {
+    const mainGuildId = process.env.GUILD_ID;
+    const guild = client.guilds.cache.get(mainGuildId);
+    if (!guild) {
+      logError('verificarUsuariosInativos', `Guild principal (${mainGuildId}) não encontrada.`);
+      return;
+    }
+    // Busca apenas os usuários que têm documento de nível
+    const usuarios = await database.find(database.COLLECTIONS.NIVEIS, {});
+    let removidos = 0;
+    for (const usuario of usuarios) {
+      const userId = usuario._id;
+      // Verifica se o usuário ainda está no servidor
+      const member = await guild.members.fetch(userId).catch(() => null);
+      if (!member) {
+        await database.getCollection(database.COLLECTIONS.NIVEIS).deleteOne({ _id: userId });
+        removidos++;
+      }
+    }
+    console.log(`[NÍVEIS] Limpeza diária: ${removidos} usuários removidos da coleção de níveis.`);
+  } catch (err) {
+    logError('verificarUsuariosInativos', err);
+  }
+}
+
+// Agendamento da verificação diária ao iniciar o bot
 async function initialize(client, ignisContext) {
   await DatabaseService.initializeCollections(ignisContext);
   LevelSystem.messageCooldowns.clear();
   LevelSystem.setupVoiceXPTimer(ignisContext);
+
+  // Limpeza diária de usuários inativos
+  await verificarUsuariosInativos(client, ignisContext);
+  setInterval(() => verificarUsuariosInativos(client, ignisContext), 24 * 60 * 60 * 1000);
+
+  // --- Adiciona usuários já em chamadas de voz ao voiceUsers ao iniciar ---
+  try {
+    for (const guild of client.guilds.cache.values()) {
+      // Garante que o cache de voiceStates está populado
+      await guild.members.fetch().catch(() => {});
+      for (const [userId, voiceState] of guild.voiceStates.cache) {
+        const member = guild.members.cache.get(userId);
+        if (!member || member.user.bot) continue;
+        const channel = voiceState.channel;
+        if (!channel) continue;
+        LevelSystem.voiceUsers.set(userId, {
+          channelId: channel.id,
+          joinTime: Date.now(),
+          member: member,
+          guild: guild,
+          lastXpTime: null
+        });
+      }
+    }
+    console.log('[IGNIS] Sistema de níveis pronto. Usuários em call inicializados.');
+  } catch (err) {
+    logError('initialize:voiceUsersOnStartup', err);
+  }
 }
 
 async function execute(message, ignisContext) {
@@ -461,11 +502,14 @@ async function execute(message, ignisContext) {
   try {
     const configuracao = await DatabaseService.fetchConfiguracao(ignisContext, message.guild.id);
     const rankData = await DatabaseService.getUserRankData(message.author.id, ignisContext);
-    const xpGained = LevelSystem.calculateMessageXP(message);
+    // Passa o nível do usuário para o cálculo de XP
+    const xpGained = LevelSystem.calculateMessageXP(message, rankData.level);
+    let xpConcedido = 0;
     if (xpGained > 0) {
       const { newLevel, previousLevel, leveledUp } = await DatabaseService.updateUserXP(
         message.author.id, rankData, xpGained, ignisContext
       );
+      xpConcedido = 1;
       if (leveledUp && newLevel > previousLevel) {
         await DatabaseService.recordLevelUpHistory(
           ignisContext, message.author.id, message.author.username, newLevel, message.guild.id
@@ -478,8 +522,11 @@ async function execute(message, ignisContext) {
         );
       }
     }
+    if (xpConcedido > 0) {
+      console.log(`[NÍVEIS] XP concedido para ${xpConcedido} usuário(s).`);
+    }
   } catch (error) {
-    console.error('Erro ao processar XP da mensagem:', error);
+    logError('execute', error);
   }
 }
 
