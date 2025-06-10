@@ -2,7 +2,8 @@ const COLLECTIONS = {
   DADOS_USUARIOS: 'dadosUsuarios',
   CONFIGURACOES: 'configuracoes',
   TEMPORARIO: 'temporario',
-  NIVEIS: 'niveis' // Nova coleção para progressão de nível
+  NIVEIS: 'niveis', // Nova coleção para progressão de nível
+  PRESTIGIOS: 'prestigios' // Coleção para dados de prestígio
 };
 
 // Função auxiliar para tratamento de erros
@@ -94,11 +95,37 @@ async function initializeCollections() {
       )
     ));
 
+    // Inicializar coleção de prestígios
+    await ensureCollection(COLLECTIONS.PRESTIGIOS);
+
     return true;
   } catch (error) {
     console.error('Erro ao inicializar coleções:', error);
     return false;
   }
+}
+
+async function getRegistroMembrosChannelId(mongoUri) {
+    const { MongoClient } = require('mongodb');
+    const client = new MongoClient(mongoUri);
+    try {
+        await client.connect();
+        const db = client.db('ignis');
+        const canaisDoc = await db.collection('configuracoes').findOne({ _id: 'canais' });
+        if (!canaisDoc || !Array.isArray(canaisDoc.categorias)) return null;
+        for (const categoria of canaisDoc.categorias) {
+            if (!Array.isArray(categoria.canais)) continue;
+            const canal = categoria.canais.find(c => c.nome === 'registros-membros');
+            if (canal) return canal.id;
+        }
+        return null;
+    } finally {
+        await client.close();
+    }
+}
+
+async function getErrosComando() {
+    return await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'erros-comando' });
 }
 
 // Exportar apenas o necessário
@@ -109,5 +136,7 @@ module.exports = {
   findOne: (collectionName, query) => find(collectionName, query, { findOne: true }),
   updateOne,
   ensureCollection,
-  initializeCollections
+  initializeCollections,
+  getRegistroMembrosChannelId, // exporta a função utilitária
+  getErrosComando,
 };

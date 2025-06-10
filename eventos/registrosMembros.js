@@ -1,5 +1,5 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { MongoClient } = require('mongodb');
+const { getRegistroMembrosChannelId, findOne } = require('../mongodb');
 
 const EXECUTOR_DESCONHECIDO = 'Desconhecido';
 const MOTIVO_NAO_INFORMADO = 'Não informado';
@@ -15,34 +15,9 @@ function criarEmbed({ cor, titulo, descricao, thumb, campos }) {
     return embed;
 }
 
-async function getRegistroMembrosChannelId(mongoUri) {
-    const client = new MongoClient(mongoUri);
-    try {
-        await client.connect();
-        const db = client.db('ignis');
-        const canaisDoc = await db.collection('configuracoes').findOne({ _id: 'canais' });
-        if (!canaisDoc || !Array.isArray(canaisDoc.categorias)) return null;
-        for (const categoria of canaisDoc.categorias) {
-            if (!Array.isArray(categoria.canais)) continue;
-            const canal = categoria.canais.find(c => c.nome === 'registros-membros');
-            if (canal) return canal.id;
-        }
-        return null;
-    } finally {
-        await client.close();
-    }
-}
-
-async function getStatusConfig(mongoUri) {
-    const client = new MongoClient(mongoUri);
-    try {
-        await client.connect();
-        const db = client.db('ignis');
-        const statusDoc = await db.collection('configuracoes').findOne({ _id: 'status' });
-        return statusDoc;
-    } finally {
-        await client.close();
-    }
+// Reescrever getStatusConfig para usar findOne utilitário
+async function getStatusConfig() {
+    return await findOne('configuracoes', { _id: 'status' });
 }
 
 async function getExecutorFromAudit(guild, type, targetId, extraFilter) {
@@ -148,6 +123,44 @@ module.exports = {
             if (newMember.user.bot) return;
             const logChannel = await getLogChannel(newMember.guild);
             if (!logChannel) return;
+            // Log de boost iniciado
+            if (!oldMember.premiumSince && newMember.premiumSince) {
+                const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'premium_since'));
+                // Buscar total de boosts atual
+                const totalBoosts = newMember.guild.premiumSubscriptionCount || 0;
+                const embed = criarEmbed({
+                    cor: 0xF47FFF,
+                    titulo: '🚀 Impulsionamento iniciado',
+                    descricao: `${newMember.user.tag} (${newMember.id}) começou a impulsionar o servidor!\nPor: ${executor}\nTotal de boosts: ${totalBoosts}`,
+                    thumb: newMember.user.displayAvatarURL({ dynamic: true })
+                });
+                logChannel.send({ embeds: [embed] });
+            }
+            // Log de boost encerrado
+            if (oldMember.premiumSince && !newMember.premiumSince) {
+                const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'premium_since'));
+                // Buscar total de boosts atual
+                const totalBoosts = newMember.guild.premiumSubscriptionCount || 0;
+                const embed = criarEmbed({
+                    cor: 0x808080,
+                    titulo: '💔 Impulsionamento encerrado',
+                    descricao: `${newMember.user.tag} (${newMember.id}) parou de impulsionar o servidor.\nPor: ${executor}\nTotal de boosts: ${totalBoosts}`,
+                    thumb: newMember.user.displayAvatarURL({ dynamic: true })
+                });
+                logChannel.send({ embeds: [embed] });
+            }
+            // Log de boost renovado (parou e voltou no mesmo dia)
+            if (oldMember.premiumSince && newMember.premiumSince && oldMember.premiumSince.getTime() !== newMember.premiumSince.getTime()) {
+                const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'premium_since'));
+                const totalBoosts = newMember.guild.premiumSubscriptionCount || 0;
+                const embed = criarEmbed({
+                    cor: 0xF47FFF,
+                    titulo: '🔄 Impulsionamento renovado',
+                    descricao: `${newMember.user.tag} (${newMember.id}) renovou o impulsionamento do servidor!\nPor: ${executor}\nTotal de boosts: ${totalBoosts}`,
+                    thumb: newMember.user.displayAvatarURL({ dynamic: true })
+                });
+                logChannel.send({ embeds: [embed] });
+            }
             const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
             const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
             if (added.size || removed.size) {
@@ -187,10 +200,18 @@ module.exports = {
             }
             if (oldMember.nickname !== newMember.nickname) {
                 const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'nick'));
+                let descricao = '';
+                if (!oldMember.nickname && newMember.nickname) {
+                    descricao = `Apelido definido para: ${newMember.nickname}\nPor: ${executor}`;
+                } else if (oldMember.nickname && !newMember.nickname) {
+                    descricao = `Apelido removido (resetado para padrão).\nAnterior: ${oldMember.nickname}\nPor: ${executor}`;
+                } else {
+                    descricao = `De: ${oldMember.nickname || 'Nenhum'}\nPara: ${newMember.nickname || 'Nenhum'}\nPor: ${executor}`;
+                }
                 const embed = criarEmbed({
                     cor: 0xFFA500,
                     titulo: '✏️ Apelido alterado',
-                    descricao: `De: ${oldMember.nickname || 'Nenhum'}\nPara: ${newMember.nickname || 'Nenhum'}\nPor: ${executor}`,
+                    descricao,
                     thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
                 logChannel.send({ embeds: [embed] });
@@ -199,21 +220,32 @@ module.exports = {
 
         client.on(Events.UserUpdate, async (oldUser, newUser) => {
             if (newUser.bot) return;
-            const changedUsername = oldUser.username !== newUser.username || oldUser.discriminator !== newUser.discriminator;
+            const changedUsername = oldUser.username !== newUser.username;
+            const changedDiscriminator = oldUser.discriminator !== newUser.discriminator;
             const changedAvatar = oldUser.avatar !== newUser.avatar;
-            if (!changedUsername && !changedAvatar) return;
+            if (!changedUsername && !changedDiscriminator && !changedAvatar) return;
             for (const guild of client.guilds.cache.values()) {
                 const member = guild.members.cache.get(newUser.id);
                 if (!member) continue;
                 const logChannel = await getLogChannel(guild);
                 if (!logChannel) continue;
                 const campos = [];
-                if (changedUsername) campos.push({ name: 'Nome de usuário alterado', value: `De: ${oldUser.tag}\nPara: ${newUser.tag}` });
-                if (changedAvatar) campos.push({ name: 'Avatar alterado', value: `[Ver novo avatar](${newUser.displayAvatarURL({ dynamic: true })})` });
+                if (changedUsername) campos.push({
+                    name: 'Nome de usuário alterado',
+                    value: `De: ${oldUser.username}\nPara: ${newUser.username}`
+                });
+                if (changedDiscriminator) campos.push({
+                    name: 'Discriminador alterado',
+                    value: `De: #${oldUser.discriminator}\nPara: #${newUser.discriminator}`
+                });
+                if (changedAvatar) campos.push({
+                    name: 'Avatar alterado',
+                    value: `[Clique para ver o novo avatar](https://cdn.discordapp.com/avatars/${newUser.id}/${newUser.avatar}.png)`
+                });
                 const embed = criarEmbed({
                     cor: 0xFFA500,
                     titulo: '📝 Perfil atualizado',
-                    descricao: `Usuário: ${newUser.tag} (${newUser.id})`,
+                    descricao: `Usuário: [${newUser.tag}](https://discord.com/users/${newUser.id})`,
                     thumb: newUser.displayAvatarURL({ dynamic: true }),
                     campos
                 });

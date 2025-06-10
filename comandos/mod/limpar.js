@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, Collection, EmbedBuilder } = require('discord.js');
-const { erros } = require('../../erros.json');
 const path = require('path');
-const { find } = require(path.resolve(__dirname, '../../mongodb.js'));
+const { find, getCollection } = require(path.resolve(__dirname, '../../mongodb.js'));
 
 // Função auxiliar para encontrar o ID do canal de logs
 async function getLogChannelId() {
@@ -84,6 +83,12 @@ async function createDetailedLog(interaction, mensagensApagadas, params) {
     return { embeds: [embed] };
 }
 
+// Função para buscar erros do MongoDB
+async function getErrosComando() {
+  const collection = getCollection('configuracoes');
+  return await collection.findOne({ _id: 'erros-comando' });
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('mod-limpar')
@@ -149,7 +154,7 @@ module.exports = {
         }
 
         try {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 'Ephemeral' });
             
             // Busca um número maior de mensagens para garantir que tenhamos suficientes após a filtragem
             let mensagens = await interaction.channel.messages.fetch({ limit: 100 });

@@ -1,6 +1,6 @@
 const path = require('path');
 const { ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
-const { getCollection } = require(path.resolve(__dirname, '../../mongodb.js'));
+const { getCollection, getErrosComando } = require(path.resolve(__dirname, '../../mongodb.js'));
 
 const activeInstances = new Map();
 
@@ -194,18 +194,19 @@ module.exports = {
     
     async execute(interaction) {
         if (activeInstances.get(interaction.user.id)?.length > 0) {
+            const erros = await getErrosComando();
             return interaction.reply({
-                content: '❌ Você já tem um menu de cores ativo',
+                content: erros.cores.COR_JA_APLICADA.content,
                 ephemeral: true
             });
         }
 
         await interaction.deferReply();
-        
         try {
             const coresDoc = await getCoresDoc();
             if (!coresDoc?.roles) {
-                return interaction.editReply('❌ Sem cores disponíveis');
+                const erros = await getErrosComando();
+                return interaction.editReply(erros.cores.SEM_COR.content);
             }
 
             const member = await interaction.guild.members.fetch(interaction.user.id);
@@ -215,14 +216,16 @@ module.exports = {
                     nivelMaximo >= parseInt(p.replace('nivel', '') || 0));
 
             if (!paletas.length) {
-                return interaction.editReply('Sem cores disponíveis para seu nível');
+                const erros = await getErrosComando();
+                return interaction.editReply(erros.cores.PALETA_BLOQUEADA.content);
             }
 
             const colorManager = new ColorManager(coresDoc, paletas, member, interaction);
             activeInstances.set(interaction.user.id, [colorManager]);
             await colorManager.start();
         } catch {
-            return interaction.editReply('❌ Erro ao carregar cores');
+            const erros = await getErrosComando();
+            return interaction.editReply(erros.cores.ERRO_CARGO.content);
         }
     }
 };

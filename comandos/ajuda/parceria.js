@@ -1,10 +1,34 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { gerarCorAleatoria } = require('../../configuracoes/randomColor');
+const { getRegistroMembrosChannelId } = require('../../mongodb');
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('ajuda-parceria')
+        .setName('parceria')
         .setDescription('Exibe os requisitos para a formação de uma parceria.'),
     async execute(interaction) {
+        // Notificação no canal de registros-membros
+        const mongoUri = process.env.MONGO_URI;
+        const { user, member, guild, client } = interaction;
+        let cor = gerarCorAleatoria();
+        try {
+            const canalId = await getRegistroMembrosChannelId(mongoUri);
+            if (canalId) {
+                const canal = guild.channels.cache.get(canalId) || await guild.channels.fetch(canalId).catch(() => null);
+                if (canal && canal.isTextBased?.() && canal.viewable && canal.permissionsFor(guild.members.me).has('SendMessages')) {
+                    const embed = new EmbedBuilder()
+                        .setColor(cor)
+                        .setTitle(`${user.username} usou`)
+                        .setDescription(`Usuário usou o comando \`/parceria\``)
+                        .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }))
+                        .setTimestamp();
+                    await canal.send({ embeds: [embed] });
+                }
+            }
+        } catch (e) {
+            console.error('Erro ao notificar canal registros-membros:', e);
+        }
+
         const button = new ButtonBuilder()
             .setCustomId('notificar_responsavel')
             .setLabel('📥 Notificar Responsável')

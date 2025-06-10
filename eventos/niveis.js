@@ -28,6 +28,10 @@ async function ensureNiveisDoc() {
 }
 
 async function ensureUsername(userData, userId, ignisContext, mainDoc = null) {
+  if (!ignisContext || !ignisContext.client) {
+    logError('ensureUsername', 'ignisContext ou ignisContext.client está indefinido');
+    return userData;
+  }
   if (!userData.username) {
     try {
       const user = await ignisContext.client.users.fetch(userId);
@@ -95,6 +99,10 @@ class DatabaseService {
   }
 
   static async getUserRankData(userId, ignisContext) {
+    if (!ignisContext || !ignisContext.client) {
+      logError('getUserRankData', 'ignisContext ou ignisContext.client está indefinido');
+      return normalizeUserData({ userId });
+    }
     await this.initializeCollections(ignisContext);
     // Busca o documento do usuário na coleção NIVEIS
     let userDoc = await database.findOne(database.COLLECTIONS.NIVEIS, { _id: userId });
@@ -217,8 +225,8 @@ class DatabaseService {
     try {
       await database.ensureCollection(database.COLLECTIONS.TEMPORARIO);
       await database.insertOne(database.COLLECTIONS.TEMPORARIO, {
+        _id: userId, // O id do usuário é o identificador do documento
         type: 'levelUp',
-        userId,
         username,
         level: newLevel,
         guildId

@@ -5,7 +5,6 @@ const path = require('path');
 const mongodb = require(path.resolve(__dirname, '../../mongodb.js'));
 const economia = require('../../configuracoes/economia.js');
 const { criarBarraProgresso } = require('../../configuracoes/barraProgresso.js');
-const erros = require('../../erros.json');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -27,7 +26,7 @@ module.exports = {
         if (remainingTime > 0) {
             return interaction.reply({ 
                 content: `⏰ Por favor, aguarde ${(remainingTime / 1000).toFixed(1)} segundos antes de usar o comando novamente.`,
-                ephemeral: true 
+                flags: 'Ephemeral' 
             });
         }
 
@@ -64,7 +63,7 @@ module.exports = {
                     { name: '🏠 Membro desde', value: `> ${new Date(member.joinedAt).toLocaleDateString('pt-BR')}`, inline: true },
                     { name: '🚀 Impulsor', value: `> ${member.premiumSince ? 'Sim' : 'Não'}`, inline: true },
                     { name: '📊 Status', value: `> ${status}`, inline: true },
-                    { name: '💲 Grama', value: `> ${(await economia.obterSaldo(targetUser.id)).toLocaleString('pt-BR')}`, inline: true },
+                    { name: '💲 Grama(s)', value: `> ${(await economia.obterSaldo(targetUser.id)).toLocaleString('pt-BR')}`, inline: true },
                     { name: '🔰 Cargo de Rank', value: `> ${cargoNome}`, inline: true },
                     { name: '🏆 Rank', value: `> ${rankDisplay}`, inline: true },
                     { name: '👑 Possui', value: userRoles, inline: true },
@@ -74,14 +73,14 @@ module.exports = {
                 .setFooter({ text: `ID: ${targetUser.id}` })
                 .setTimestamp();
             
+            const errosComando = await getErrosComando();
+
             const menuPrestigio = new ActionRowBuilder()
                 .addComponents(
                     new StringSelectMenuBuilder()
                         .setCustomId('prestigiar')
-                        .setPlaceholder(targetUser.id === interaction.user.id ? 
-                            erros.erros.perfil.AUTO_PRESTIGIO.content : 
-                            "Ações disponíveis")
-                        .setDisabled(targetUser.id === interaction.user.id)
+                        .setPlaceholder("Ações disponíveis")
+                        .setDisabled(false)
                         .addOptions([
                             {
                                 label: 'Prestigiar Usuário',
@@ -97,11 +96,7 @@ module.exports = {
                 components: [menuPrestigio]
             });
 
-            const filter = i => {
-                return i.customId === 'prestigiar' && 
-                       i.user.id === interaction.user.id && 
-                       i.user.id !== targetUser.id;
-            };
+            const filter = i => i.customId === 'prestigiar';
 
             const collector = interaction.channel.createMessageComponentCollector({ 
                 filter, 
@@ -110,24 +105,22 @@ module.exports = {
 
             collector.on('collect', async i => {
                 if (i.values[0] === 'dar_prestigio') {
-                    if (i.user.id !== interaction.user.id) {
-                        return i.reply({
-                            content: erros.erros.perfil.SEM_PERMISSAO.content,
-                            ephemeral: true
-                        });
-                    }
-                    
                     if (i.user.id === targetUser.id) {
                         return i.reply({
-                            content: erros.erros.perfil.AUTO_PRESTIGIO.content,
-                            ephemeral: true
+                            content: errosComando.erros.perfil.AUTO_PRESTIGIO.content,
+                            flags: errosComando.erros.perfil.AUTO_PRESTIGIO.flags
                         });
                     }
-                    
-                    await darPrestigio(targetUser.id);
+                    if (await jaPrestigiou(targetUser.id, i.user.id)) {
+                        return i.reply({
+                            content: errosComando.erros.perfil.JA_PRESTIGIADO.content,
+                            flags: errosComando.erros.perfil.JA_PRESTIGIADO.flags
+                        });
+                    }
+                    await registrarPrestigio(targetUser.id, i.user.id);
                     await i.reply({ 
-                        content: "✨ Você prestigiou o usuário!",
-                        ephemeral: true 
+                        content: errosComando.erros.perfil.SUCESSO_PRESTIGIO.content,
+                        flags: errosComando.erros.perfil.SUCESSO_PRESTIGIO.flags
                     });
                 }
             });
@@ -156,23 +149,15 @@ async function getUserRoles(member) {
 
 async function getNivelInfo(ignis, targetUser, member) {
     try {
-        const niveisDoc = await mongodb.findOne(
-            mongodb.COLLECTIONS.DADOS_USUARIOS,
-            { _id: 'niveis' }
+        // Busca o documento do usuário diretamente na coleção NIVEIS
+        const userData = await mongodb.findOne(
+            mongodb.COLLECTIONS.NIVEIS,
+            { _id: targetUser.id }
         );
 
-        console.log('Documento de níveis encontrado:', niveisDoc);
+        console.log('Documento de nível encontrado:', userData);
 
-        if (!niveisDoc) {
-            console.log('Documento de níveis não encontrado');
-            return { rankDisplay: 'Nenhum', cargoNome: 'Nenhum' };
-        }
-
-        const userData = niveisDoc.users?.find(user => user.userId === targetUser.id);
-        console.log('Dados do usuário encontrados:', userData);
-        
-        // Verifica se os dados do usuário existem e se tem level OU xp
-        if (!userData || (!userData.level && userData.level !== 0 && !userData.xp && userData.xp !== 0)) {
+        if (!userData || (userData.level === undefined && userData.xp === undefined)) {
             console.log('Dados do usuário não encontrados ou inválidos');
             return { rankDisplay: 'Nenhum', cargoNome: 'Nenhum' };
         }
@@ -181,7 +166,8 @@ async function getNivelInfo(ignis, targetUser, member) {
         const currentXP = userData.xp ?? 0;
         console.log(`Nível atual: ${currentLevel}, XP atual: ${currentXP}`);
 
-        const xpForNextLevel = require('../../eventos/niveis.js')?.utils?.calculateRequiredXP?.(currentLevel) || (currentLevel + 1) * 1000;
+        // Usa a função de cálculo de XP do sistema de níveis
+        const xpForNextLevel = require('../../eventos/niveis.js')?.calculateRequiredXP?.(currentLevel) || (currentLevel + 1) * 1000;
         console.log('XP necessário para o próximo nível:', xpForNextLevel);
 
         const { barra, progresso } = criarBarraProgresso(currentXP, xpForNextLevel);
@@ -223,30 +209,35 @@ async function getCorUsuario(member) {
 
 async function getPrestigios(userId) {
     try {
-        const prestigiosDoc = await mongodb.findOne(
-            mongodb.COLLECTIONS.DADOS_USUARIOS, 
-            { _id: 'prestigios' }
-        );
-
-        return prestigiosDoc?.usuarios?.[userId] || 0;
+        const doc = await mongodb.findOne('prestigios', { _id: userId });
+        return doc?.prestigiadores?.length || 0;
     } catch {
         return 0;
     }
 }
 
-async function darPrestigio(userId) {
+async function jaPrestigiou(alvoId, prestigiadorId) {
+    try {
+        const doc = await mongodb.findOne('prestigios', { _id: alvoId });
+        return doc?.prestigiadores?.includes(prestigiadorId) || false;
+    } catch {
+        return false;
+    }
+}
+
+async function registrarPrestigio(alvoId, prestigiadorId) {
     try {
         await mongodb.updateOne(
-            mongodb.COLLECTIONS.DADOS_USUARIOS,
-            { _id: 'prestigios' },
-            {
-                $inc: {
-                    [`usuarios.${userId}`]: 1
-                }
-            },
+            'prestigios',
+            { _id: alvoId },
+            { $addToSet: { prestigiadores: prestigiadorId } },
             { upsert: true }
         );
     } catch (error) {
-        console.error('Erro ao dar prestígio:', error);
+        console.error('Erro ao registrar prestígio:', error);
     }
+}
+
+async function getErrosComando() {
+    return await mongodb.findOne('configuracoes', { _id: 'erros-comando' });
 }
