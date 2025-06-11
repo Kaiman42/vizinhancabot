@@ -12,7 +12,8 @@ const botClient = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMembers // Adicionado para eventos de entrada/saída de membros
     ],
     partials: [
         Partials.Message,

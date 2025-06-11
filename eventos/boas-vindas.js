@@ -19,10 +19,11 @@ function initialize(client, ignisContext) {
       embeds: [createWelcomeEmbed(newMember)]
     });
 
-    await database.upsert(
+    await database.updateOne(
       database.COLLECTIONS.DADOS_USUARIOS,
       { _id: 'evitar_spam' },
-      { $push: { usuarios: { userId } } }
+      { $push: { usuarios: { userId } } },
+      { upsert: true }
     );
 
     setTimeout(() => welcomeMessage.delete().catch(() => {}), 60000);

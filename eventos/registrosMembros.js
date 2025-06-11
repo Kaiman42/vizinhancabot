@@ -63,10 +63,14 @@ module.exports = {
             if (!logChannel) return;
             const embed = criarEmbed({
                 cor: member.user.bot ? 0x5865F2 : 0x57F287,
-                titulo: member.user.bot ? '🤖 Bot entrou' : '👤 Membro entrou',
-                descricao: `${member.user.tag} (${member.id}) entrou no servidor.`,
+                titulo: member.user.bot ? '🤖 Bot entrou no servidor' : '👤 Membro entrou',
                 thumb: member.user.displayAvatarURL({ dynamic: true })
             });
+            embed.addFields(
+                { name: 'Usuário', value: `<@${member.id}>`, inline: false },
+                { name: 'Conta criada', value: `<t:${Math.floor(member.user.createdTimestamp/1000)}:R>`, inline: false }
+            );
+            embed.setFooter({ text: `${member.id}` });
             logChannel.send({ embeds: [embed] });
         });
 
@@ -74,21 +78,37 @@ module.exports = {
             const logChannel = await getLogChannel(member.guild);
             if (!logChannel) return;
             let titulo = member.user.bot ? '🤖 Bot saiu' : '👤 Membro saiu';
-            let descricao = `${member.user.tag} (${member.id}) saiu do servidor.`;
+            let cor = member.user.bot ? 0x5865F2 : 0xED4245;
+            let executor = null;
+            let motivo = null;
+            let expulsao = false;
+            let kick = null; // Corrigido: definir kick fora do try
             try {
                 const audit = await member.guild.fetchAuditLogs({ type: AuditLogEvent.MemberKick, limit: 1 });
-                const kick = audit.entries.first();
-                if (kick && kick.target.id === member.id && Date.now() - kick.createdTimestamp < 5000) {
+                kick = audit.entries.first();
+                if (kick && kick.target.id === member.id && Date.now() - kick.createdTimestamp < 10000) {
                     titulo = member.user.bot ? '🤖 Bot expulso' : '👤 Membro expulso';
-                    descricao = `${member.user.tag} (${member.id}) foi expulso do servidor por ${kick.executor.tag}.\nMotivo: ${kick.reason || MOTIVO_NAO_INFORMADO}`;
+                    executor = kick.executor ? kick.executor.tag : EXECUTOR_DESCONHECIDO;
+                    motivo = kick.reason || MOTIVO_NAO_INFORMADO;
+                    expulsao = true;
                 }
             } catch {}
             const embed = criarEmbed({
-                cor: member.user.bot ? 0x5865F2 : 0xED4245,
+                cor,
                 titulo,
-                descricao,
                 thumb: member.user.displayAvatarURL({ dynamic: true })
             });
+            embed.addFields(
+                { name: 'Usuário', value: `<@${member.id}>`, inline: false },
+                { name: 'Conta criada', value: `<t:${Math.floor(member.user.createdTimestamp/1000)}:R>`, inline: false }
+            );
+            if (expulsao) {
+                embed.addFields(
+                    { name: 'Executor', value: `<@${kick.executor?.id || ''}>`, inline: false },
+                    { name: 'Motivo', value: `\`${motivo}\``, inline: false }
+                );
+            }
+            embed.setFooter({ text: `${member.id}` });
             logChannel.send({ embeds: [embed] });
         });
 
@@ -100,9 +120,15 @@ module.exports = {
             const embed = criarEmbed({
                 cor: 0xED4245,
                 titulo: '🚫 Usuário Banido',
-                descricao: `${ban.user.tag} (${ban.user.id}) foi banido.\nPor: ${executor}\nMotivo: ${motivo}`,
+                descricao: `<@${ban.user.id}> foi banido do servidor.`,
                 thumb: ban.user.displayAvatarURL({ dynamic: true })
             });
+            embed.addFields(
+                { name: 'Conta criada', value: `<t:${Math.floor(ban.user.createdTimestamp/1000)}:R>`, inline: false },
+                { name: 'Executor', value: executor, inline: false },
+                { name: 'Motivo', value: motivo, inline: false }
+            );
+            embed.setFooter({ text: `${ban.user.id}` });
             logChannel.send({ embeds: [embed] });
         });
 
@@ -113,9 +139,13 @@ module.exports = {
             const embed = criarEmbed({
                 cor: 0x57F287,
                 titulo: '♻️ Usuário Desbanido',
-                descricao: `${ban.user.tag} (${ban.user.id}) foi desbanido.\nPor: ${executor}`,
+                descricao: `<@${ban.user.id}> foi desbanido do servidor.`,
                 thumb: ban.user.displayAvatarURL({ dynamic: true })
             });
+            embed.addFields(
+                { name: 'Executor', value: executor, inline: false }
+            );
+            embed.setFooter({ text: `${ban.user.id}` });
             logChannel.send({ embeds: [embed] });
         });
 
@@ -126,94 +156,131 @@ module.exports = {
             // Log de boost iniciado
             if (!oldMember.premiumSince && newMember.premiumSince) {
                 const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'premium_since'));
-                // Buscar total de boosts atual
                 const totalBoosts = newMember.guild.premiumSubscriptionCount || 0;
                 const embed = criarEmbed({
                     cor: 0xF47FFF,
                     titulo: '🚀 Impulsionamento iniciado',
-                    descricao: `${newMember.user.tag} (${newMember.id}) começou a impulsionar o servidor!\nPor: ${executor}\nTotal de boosts: ${totalBoosts}`,
+                    descricao: `<@${newMember.id}> começou a impulsionar o servidor.`,
                     thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
+                embed.addFields(
+                    { name: 'Executor', value: executor, inline: false },
+                    { name: 'Total de boosts', value: String(totalBoosts), inline: false }
+                );
+                embed.setFooter({ text: `${newMember.id}` });
                 logChannel.send({ embeds: [embed] });
             }
             // Log de boost encerrado
             if (oldMember.premiumSince && !newMember.premiumSince) {
                 const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'premium_since'));
-                // Buscar total de boosts atual
                 const totalBoosts = newMember.guild.premiumSubscriptionCount || 0;
                 const embed = criarEmbed({
                     cor: 0x808080,
                     titulo: '💔 Impulsionamento encerrado',
-                    descricao: `${newMember.user.tag} (${newMember.id}) parou de impulsionar o servidor.\nPor: ${executor}\nTotal de boosts: ${totalBoosts}`,
+                    descricao: `<@${newMember.id}> parou de impulsionar o servidor.`,
                     thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
+                embed.addFields(
+                    { name: 'Executor', value: executor, inline: false },
+                    { name: 'Total de boosts', value: String(totalBoosts), inline: false }
+                );
+                embed.setFooter({ text: `${newMember.id}` });
                 logChannel.send({ embeds: [embed] });
             }
-            // Log de boost renovado (parou e voltou no mesmo dia)
+            // Log de boost renovado
             if (oldMember.premiumSince && newMember.premiumSince && oldMember.premiumSince.getTime() !== newMember.premiumSince.getTime()) {
                 const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'premium_since'));
                 const totalBoosts = newMember.guild.premiumSubscriptionCount || 0;
                 const embed = criarEmbed({
                     cor: 0xF47FFF,
                     titulo: '🔄 Impulsionamento renovado',
-                    descricao: `${newMember.user.tag} (${newMember.id}) renovou o impulsionamento do servidor!\nPor: ${executor}\nTotal de boosts: ${totalBoosts}`,
+                    descricao: `<@${newMember.id}> renovou o impulsionamento do servidor.`,
                     thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
+                embed.addFields(
+                    { name: 'Executor', value: executor, inline: false },
+                    { name: 'Total de boosts', value: String(totalBoosts), inline: false }
+                );
+                embed.setFooter({ text: `${newMember.id}` });
                 logChannel.send({ embeds: [embed] });
             }
+            // Atualização de cargos
             const added = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
             const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
             if (added.size || removed.size) {
-                const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberRoleUpdate, newMember.id);
+                // Buscar o executor como objeto para pegar o ID mencionável
+                let executorObj = null;
+                try {
+                    const audit = await newMember.guild.fetchAuditLogs({ type: AuditLogEvent.MemberRoleUpdate, limit: 5 });
+                    executorObj = audit.entries.find(e => e.target.id === newMember.id)?.executor;
+                } catch {}
+                const executorMention = executorObj ? `<@${executorObj.id}>` : EXECUTOR_DESCONHECIDO;
                 const campos = [];
+                campos.push({ name: '**Usuário**', value: `<@${newMember.id}>`, inline: false });
+                campos.push({ name: 'Alterado por', value: executorMention, inline: false });
                 if (added.size) campos.push({ name: 'Cargos Adicionados', value: added.map(r => `<@&${r.id}>`).join(', '), inline: false });
                 if (removed.size) campos.push({ name: 'Cargos Removidos', value: removed.map(r => `<@&${r.id}>`).join(', '), inline: false });
-                campos.push({ name: 'Alterado por', value: executor, inline: false });
                 const embed = criarEmbed({
                     cor: 0xFFA500,
                     titulo: '🔄 Atualização de Cargos',
-                    thumb: newMember.user.displayAvatarURL({ dynamic: true }),
-                    campos
+                    campos,
+                    thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
+                embed.setFooter({ text: `${newMember.id}` });
                 logChannel.send({ embeds: [embed] });
             }
+            // Timeout aplicado
             if (!oldMember.communicationDisabledUntil && newMember.communicationDisabledUntil) {
                 const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'communication_disabled_until'));
                 const motivo = await getMotivoFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'communication_disabled_until'));
                 const embed = criarEmbed({
                     cor: 0xED4245,
                     titulo: '⏳ Timeout aplicado',
-                    descricao: `${newMember.user.tag} (${newMember.id}) recebeu timeout até <t:${Math.floor(new Date(newMember.communicationDisabledUntil).getTime()/1000)}:F>.\nPor: ${executor}\nMotivo: ${motivo}`,
+                    descricao: `<@${newMember.id}> recebeu timeout.`,
                     thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
+                embed.addFields(
+                    { name: 'Executor', value: executor, inline: false },
+                    { name: 'Motivo', value: motivo, inline: false },
+                    { name: 'Até', value: `<t:${Math.floor(new Date(newMember.communicationDisabledUntil).getTime()/1000)}:F>`, inline: false }
+                );
+                embed.setFooter({ text: `${newMember.id}` });
                 logChannel.send({ embeds: [embed] });
             }
+            // Timeout removido
             if (oldMember.communicationDisabledUntil && !newMember.communicationDisabledUntil) {
                 const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'communication_disabled_until' && c.old !== null && c.new === null));
                 const embed = criarEmbed({
                     cor: 0x57F287,
                     titulo: '⏳ Timeout removido',
-                    descricao: `${newMember.user.tag} (${newMember.id}) teve o timeout removido.\nPor: ${executor}`,
+                    descricao: `<@${newMember.id}> teve o timeout removido.`,
                     thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
+                embed.addFields(
+                    { name: 'Executor', value: executor, inline: false }
+                );
+                embed.setFooter({ text: `${newMember.id}` });
                 logChannel.send({ embeds: [embed] });
             }
+            // Apelido alterado
             if (oldMember.nickname !== newMember.nickname) {
                 const executor = await getExecutorFromAudit(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id, e => e.changes.some(c => c.key === 'nick'));
                 let descricao = '';
                 if (!oldMember.nickname && newMember.nickname) {
-                    descricao = `Apelido definido para: ${newMember.nickname}\nPor: ${executor}`;
+                    descricao = `<@${newMember.id}> definiu apelido para: ${newMember.nickname}`;
                 } else if (oldMember.nickname && !newMember.nickname) {
-                    descricao = `Apelido removido (resetado para padrão).\nAnterior: ${oldMember.nickname}\nPor: ${executor}`;
+                    descricao = `<@${newMember.id}> removeu o apelido (resetado para padrão).\nAnterior: ${oldMember.nickname}`;
                 } else {
-                    descricao = `De: ${oldMember.nickname || 'Nenhum'}\nPara: ${newMember.nickname || 'Nenhum'}\nPor: ${executor}`;
+                    descricao = `<@${newMember.id}> alterou o apelido.\nDe: ${oldMember.nickname || 'Nenhum'}\nPara: ${newMember.nickname || 'Nenhum'}`;
                 }
+                descricao += `\nPor: ${executor}`;
                 const embed = criarEmbed({
                     cor: 0xFFA500,
                     titulo: '✏️ Apelido alterado',
                     descricao,
                     thumb: newMember.user.displayAvatarURL({ dynamic: true })
                 });
+                embed.setFooter({ text: `${newMember.id}` });
                 logChannel.send({ embeds: [embed] });
             }
         });
