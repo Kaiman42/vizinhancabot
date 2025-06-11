@@ -20,14 +20,7 @@ function normalizeUserData(userData) {
   };
 }
 
-async function ensureNiveisDoc() {
-  // Busca o documento do usuário na coleção 'niveis', onde cada documento é um usuário
-  // O _id do documento será o userId
-  // Esta função não faz mais sentido buscar um array de users, mas sim um documento por usuário
-  throw new Error('Função obsoleta: utilize DatabaseService.getUserRankData diretamente com a coleção NIVEIS');
-}
-
-async function ensureUsername(userData, userId, ignisContext, mainDoc = null) {
+async function ensureUsername(userData, userId, ignisContext) {
   if (!ignisContext || !ignisContext.client) {
     logError('ensureUsername', 'ignisContext ou ignisContext.client está indefinido');
     return userData;
@@ -37,16 +30,12 @@ async function ensureUsername(userData, userId, ignisContext, mainDoc = null) {
       const user = await ignisContext.client.users.fetch(userId);
       if (user) {
         userData.username = user.username;
-        if (mainDoc) {
-          const userObj = mainDoc.users.find(u => u.userId === userId);
-          if (userObj) {
-            await database.updateOne(
-              database.COLLECTIONS.DADOS_USUARIOS,
-              { _id: 'niveis' },
-              { $set: { [`users.${mainDoc.users.indexOf(userObj)}.username`]: user.username } }
-            );
-          }
-        }
+        // Atualiza o campo username no documento do usuário na coleção NIVEIS
+        await database.updateOne(
+          database.COLLECTIONS.NIVEIS,
+          { _id: userId },
+          { $set: { username: user.username } }
+        );
       }
     } catch (e) {
       logError('ensureUsername', e);
@@ -506,6 +495,15 @@ async function initialize(client, ignisContext) {
 }
 
 async function execute(message, ignisContext) {
+  if (!ignisContext || !ignisContext.client) {
+    // Tenta usar o contexto global se não foi passado
+    if (global.ignisContext && global.ignisContext.client) {
+      ignisContext = global.ignisContext;
+    } else {
+      logError('execute', 'ignisContext ou ignisContext.client está indefinido');
+      return;
+    }
+  }
   if (message.author.bot || !message.guild) return;
   try {
     const configuracao = await DatabaseService.fetchConfiguracao(ignisContext, message.guild.id);

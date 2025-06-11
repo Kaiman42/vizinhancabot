@@ -42,6 +42,8 @@ async function alternarCanalUnico(interaction, canalId, canalConfig, guildId) {
   outerLoop: for (const categoria of canalConfig.categorias) {
     for (const canal of categoria.canais) {
       if (canal.id === canalId) {
+        // Ignorar canal bloqueado
+        if (canal.tipo === 'bloqueado') return [];
         const canalDiscord = interaction.guild.channels.cache.get(canal.id);
         if (!canalDiscord) return [];
         
@@ -92,12 +94,16 @@ async function alternarCanalUnico(interaction, canalId, canalConfig, guildId) {
   return [];
 }
 
-async function alternarTodosCanais(interaction, canalConfig, guildId) {
+async function alternarTodosCanais(interaction, canalConfig, guildId, filtroTipo = null) {
   const canaisAlterados = [];
   const COLLECTION_NAME = 'configuracoes';
 
   for (const categoria of canalConfig.categorias) {
     for (const canal of categoria.canais) {
+      // Ignorar canais bloqueados
+      if (canal.tipo === 'bloqueado') continue;
+      // Filtrar por tipo se necessário
+      if (filtroTipo && !filtroTipo.includes(canal.tipo)) continue;
       const canalDiscord = interaction.guild.channels.cache.get(canal.id);
       if (!canalDiscord) continue;
 
@@ -238,8 +244,9 @@ module.exports = {
         .setDescription('Escolha o escopo das alterações')
         .setRequired(false)
         .addChoices(
-          { name: 'Esse canal', value: 'esse_canal' },
-          { name: 'Todos canais', value: 'todos_canais' }
+          { name: 'Todos canais de texto', value: 'todos_texto' },
+          { name: 'Todos canais de voz', value: 'todos_voz' },
+          { name: 'Todos canais de texto e voz', value: 'todos_texto_voz' }
         )
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
@@ -248,7 +255,7 @@ module.exports = {
     await interaction.deferReply({ ephemeral: true });
 
     try {
-      const escopo = interaction.options.getString('escopo') || 'esse_canal';
+      const escopo = interaction.options.getString('escopo');
       const canalAtual = interaction.channel;
       const guildId = interaction.guildId;
 
@@ -258,11 +265,24 @@ module.exports = {
       }
 
       let canaisAfetados = [];
-
-      if (escopo === 'esse_canal') {
+      if (!escopo) {
+        // Ignorar se o canal for bloqueado
+        let canalInfo = null;
+        for (const categoria of canalConfig.categorias) {
+          canalInfo = categoria.canais.find(c => c.id === canalAtual.id);
+          if (canalInfo) break;
+        }
+        if (canalInfo && canalInfo.tipo === 'bloqueado') {
+          return responderErro(interaction, '❌ Este canal está bloqueado e não pode ser alterado.');
+        }
         canaisAfetados = await alternarCanalUnico(interaction, canalAtual.id, canalConfig, guildId);
       } else {
-        canaisAfetados = await alternarTodosCanais(interaction, canalConfig, guildId);
+        // Filtros de tipo
+        let filtroTipo = null;
+        if (escopo === 'todos_texto') filtroTipo = ['texto'];
+        else if (escopo === 'todos_voz') filtroTipo = ['voz'];
+        else if (escopo === 'todos_texto_voz') filtroTipo = ['texto', 'voz'];
+        canaisAfetados = await alternarTodosCanais(interaction, canalConfig, guildId, filtroTipo);
       }
 
       if (!canaisAfetados || canaisAfetados.length === 0) {
