@@ -7,80 +7,48 @@ const ECONOMIA = {
   DAILY_COOLDOWN: 24 * 60 * 60 * 1000
 };
 
-class SistemaEconomia {
+// Nova versão: cada usuário é um documento separado na coleção 'economias'
+class SistemaEconomiaNovo {
   static async obterSaldo(userId) {
-    const doc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' });
-    return doc?.usuarios?.find(u => u.userId === userId)?.saldo || ECONOMIA.DEFAULT_BALANCE;
+    const doc = await mongodb.findOne('economias', { _id: userId });
+    return doc?.saldo || ECONOMIA.DEFAULT_BALANCE;
   }
 
   static async alterarSaldo(userId, amount) {
     if (!userId || isNaN(amount)) return false;
     const update = await mongodb.updateOne(
-      mongodb.COLLECTIONS.DADOS_USUARIOS,
-      { _id: 'economias', 'usuarios.userId': userId },
-      { $inc: { 'usuarios.$.saldo': amount } },
+      'economias',
+      { _id: userId },
+      { $inc: { saldo: amount } },
       { upsert: true }
     );
-    return update.modifiedCount > 0;
+    return update.modifiedCount > 0 || update.upsertedCount > 0;
   }
 
-  static async transferirSaldo(fromUserId, toUserId, amount) {
-    if (!fromUserId || !toUserId || isNaN(amount) || amount <= 0 || fromUserId === toUserId) {
-      return { success: false, message: 'Parâmetros inválidos' };
-    }
-
-    const saldoRemetente = await this.obterSaldo(fromUserId);
-    if (saldoRemetente < amount) {
-      return { success: false, message: 'Saldo insuficiente' };
-    }
-
-    const removido = await this.alterarSaldo(fromUserId, -amount);
-    const adicionado = await this.alterarSaldo(toUserId, amount);
-
-    if (!adicionado && removido) {
-      await this.alterarSaldo(fromUserId, amount);
-      return { success: false, message: 'Erro na transferência' };
-    }
-
-    return {
-      success: true,
-      message: 'Transferência realizada',
-      novoSaldoRemetente: await this.obterSaldo(fromUserId),
-      novoSaldoDestinatario: await this.obterSaldo(toUserId)
-    };
-  }
-
-  static async receberDiario(userId) {
-    const doc = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' });
-    const ultimoDaily = doc?.usuarios?.find(u => u.userId === userId)?.ultimoDaily || 0;
+  static async receberDiario(userId, valorRecompensa) {
+    const doc = await mongodb.findOne('economias', { _id: userId });
+    const ultimoDaily = doc?.ultimoDaily || 0;
     const tempoPassado = Date.now() - ultimoDaily;
-
     if (tempoPassado < ECONOMIA.DAILY_COOLDOWN) {
       return { success: false, tempoRestante: ECONOMIA.DAILY_COOLDOWN - tempoPassado };
     }
-
-    const sucesso = await this.alterarSaldo(userId, ECONOMIA.DAILY_AMOUNT);
-    if (!sucesso) return { success: false, message: 'Erro ao processar daily' };
-
     await mongodb.updateOne(
-      mongodb.COLLECTIONS.DADOS_USUARIOS,
-      { _id: 'economias', 'usuarios.userId': userId },
-      { $set: { 'usuarios.$.ultimoDaily': Date.now() } }
+      'economias',
+      { _id: userId },
+      { $inc: { saldo: valorRecompensa }, $set: { ultimoDaily: Date.now() } },
+      { upsert: true }
     );
-
     return {
       success: true,
       novoSaldo: await this.obterSaldo(userId),
-      quantiaRecebida: ECONOMIA.DAILY_AMOUNT
+      quantiaRecebida: valorRecompensa
     };
   }
 }
 
 module.exports = {
   ...ECONOMIA,
-  obterSaldo: SistemaEconomia.obterSaldo,
-  adicionarSaldo: amount => SistemaEconomia.alterarSaldo.bind(SistemaEconomia, amount),
-  removerSaldo: (userId, amount) => SistemaEconomia.alterarSaldo(userId, -amount),
-  transferirSaldo: SistemaEconomia.transferirSaldo,
-  receberDiario: SistemaEconomia.receberDiario
+  obterSaldo: SistemaEconomiaNovo.obterSaldo,
+  alterarSaldo: SistemaEconomiaNovo.alterarSaldo,
+  receberDiario: SistemaEconomiaNovo.receberDiario
 };

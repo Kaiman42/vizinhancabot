@@ -60,24 +60,6 @@ module.exports = {
 };
 
 async function receberRecompensaDiaria(userId, valorRecompensa) {
-    const podeReceber = await economia.verificarDiario(userId);
-    
-    if (!podeReceber) {
-        const usuario = await mongodb.findOne(mongodb.COLLECTIONS.DADOS_USUARIOS, { _id: 'economias' })
-            ?.usuarios?.find(u => u.userId === userId);
-        const ultimoDaily = usuario?.ultimoDaily || 0;
-        return {
-            success: false,
-            tempoRestante: economia.DAILY_COOLDOWN - (Date.now() - ultimoDaily)
-        };
-    }
-    
-    const novoSaldo = await economia.adicionarSaldo(userId, valorRecompensa);
-    await mongodb.updateOne(
-        mongodb.COLLECTIONS.DADOS_USUARIOS,
-        { _id: 'economias', 'usuarios.userId': userId },
-        { $set: { 'usuarios.$.ultimoDaily': Date.now() } }
-    );
-    
-    return { success: true, novoSaldo };
+    // Usa a nova função do sistema de economia
+    return await economia.receberDiario(userId, valorRecompensa);
 }

@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { findOne } = require('../../mongodb');
 
 // Funções movidas de utils.js
 async function verificarPermissoes(interaction) {
@@ -26,22 +27,93 @@ async function verificarPermissoesMembro(interaction, member) {
     return { success: true };
 }
 
-function criarBanEmbed(user, reason, deleteMsgs, interaction, cargo) {
-    return new EmbedBuilder()
+function criarBanEmbed(user, reason, deleteMsgs, interaction, options = {}) {
+    // Nickname do banido (se houver)
+    const member = interaction.guild.members.cache.get(user.id);
+    // Se for para mostrar só o nome, não menciona
+    const userDisplay = options.somenteUsuario ? `${user.tag}` : `<@${user.id}> (${user.tag})`;
+
+    // Moderador
+    const modMention = `<@${interaction.user.id}>`;
+    const modDisplay = `${modMention} (${interaction.user.tag})`;
+
+    // Motivo: capitalizar primeira letra se existir
+    let motivoFinal = reason && reason.trim() ? reason.trim() : '';
+    if (motivoFinal) {
+        motivoFinal = motivoFinal.charAt(0).toUpperCase() + motivoFinal.slice(1);
+    }
+    // Motivo entre crases se existir
+    const motivoFormatado = motivoFinal ? `\`${motivoFinal}\`` : '';
+
+    // Mensagens deletadas formatado
+    let deletadas = 'Não';
+    if (deleteMsgs === true) deletadas = 'Sim (7 dias)';
+    else if (typeof deleteMsgs === 'number' && deleteMsgs > 0) deletadas = `Sim (${deleteMsgs} dias)`;
+    deletadas = `\`${deletadas}\``;
+
+    let desc = `**Usuário:** ${userDisplay}`;
+    // Exibe motivo apenas se existir OU se não for ocorrencias
+    if (options.somenteUsuario) {
+        if (motivoFinal) {
+            desc += `\n**Motivo:** ${motivoFormatado}`;
+        }
+        // Se não houver motivo, não exibe nada
+    } else {
+        desc += `\n**Motivo:** ${motivoFinal ? motivoFormatado : 'Não especificado'}`;
+    }
+    if (!options.ocultarModerador) desc += `\n**Moderador:** ${modDisplay}`;
+    if (!options.ocultarDeletadas) desc += `\n**Mensagens Deletadas:** ${deletadas}`;
+
+    const embed = new EmbedBuilder()
         .setColor('#ff0000')
         .setTitle('🔨 Usuário Banido')
-        .setDescription(`**Usuário:** ${user.tag} (${user.id})
-            **Motivo:** ${reason}
-            **Moderador:** ${interaction.user.tag}
-            **Cargo do Moderador:** ${cargo.name}
-            **Mensagens Deletadas:** ${deleteMsgs ? 'Sim (7 dias)' : 'Não'}`)
+        .setDescription(desc)
         .setTimestamp();
+    if (!options.somenteUsuario) {
+        embed.setFooter({ text: `ID: ${user.id}` });
+    }
+    if (user.displayAvatarURL) {
+        embed.setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }));
+    }
+    return embed;
 }
 
 async function enviarLog(interaction, embed) {
-    const logChannel = interaction.guild.channels.cache.find(c => c.name === 'mod-logs');
-    if (logChannel) {
-        await logChannel.send({ embeds: [embed] });
+    // Busca o documento de canais do banco
+    const canaisDoc = await findOne('configuracoes', { _id: 'canais' });
+    let canalMembrosId = null;
+    let canalOcorrenciasId = null;
+    if (canaisDoc && Array.isArray(canaisDoc.categorias)) {
+        for (const categoria of canaisDoc.categorias) {
+            if (!Array.isArray(categoria.canais)) continue;
+            for (const canal of categoria.canais) {
+                if (canal.nome === 'registros-membros') canalMembrosId = canal.id;
+                if (canal.nome === 'ocorrencias') canalOcorrenciasId = canal.id;
+            }
+        }
+    }
+    // Envia para registros-membros (completo)
+    if (canalMembrosId) {
+        const canal = interaction.guild.channels.cache.get(canalMembrosId) || await interaction.guild.channels.fetch(canalMembrosId).catch(() => null);
+        if (canal && canal.isTextBased?.() && canal.viewable && canal.permissionsFor(interaction.guild.members.me).has('SendMessages')) {
+            await canal.send({ embeds: [embed] });
+        }
+    }
+    // Envia para ocorrencias (oculta moderador e deletadas, só mostra usuário e motivo, só usuário clicável)
+    if (canalOcorrenciasId) {
+        const canal = interaction.guild.channels.cache.get(canalOcorrenciasId) || await interaction.guild.channels.fetch(canalOcorrenciasId).catch(() => null);
+        if (canal && canal.isTextBased?.() && canal.viewable && canal.permissionsFor(interaction.guild.members.me).has('SendMessages')) {
+            // Corrige: passa o objeto user corretamente para embedOcorrencia
+            const userObj = interaction.options.getUser('usuario');
+            const embedOcorrencia = criarBanEmbed(
+                userObj,
+                interaction.options.getString('motivo') || 'Nenhum motivo fornecido',
+                interaction.options.getBoolean('limpar_mensagens') || false,
+                interaction,
+                { ocultarModerador: true, ocultarDeletadas: true, somenteUsuario: true }
+            );
+            await canal.send({ embeds: [embedOcorrencia] });
+        }
     }
 }
 
@@ -154,8 +226,7 @@ module.exports = {
                 user,
                 reason,
                 deleteMsgs,
-                interaction,
-                permResult.cargo
+                interaction
             );
 
             // Enviar log

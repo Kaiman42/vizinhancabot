@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const path = require('path');
-const { findOne, upsert } = require(path.resolve(__dirname, '../../mongodb.js'));
+const { findOne, updateOne } = require(path.resolve(__dirname, '../../mongodb.js'));
+const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
 
 // Constantes de erros
 const ERROS = {
@@ -48,16 +49,43 @@ async function alternarCanalUnico(interaction, canalId, canalConfig, guildId) {
           throw ERROS.PERMISSAO_NEGADA;
         }
 
-        canal.visivel = !canal.visivel;
+        // Alterna as permissões do objeto de configuração
+        if (canal.permissoes) {
+          for (const chave in canal.permissoes) {
+            canal.permissoes[chave] = !canal.permissoes[chave];
+          }
+        }
         canalAlterado = canal;
         canalEncontrado = true;
+        // --- ALTERAÇÃO REAL DAS PERMISSÕES ---
+        const everyoneRole = interaction.guild.roles.everyone;
+        // Mapeamento das permissões customizadas para Discord.js
+        const map = {
+          enviarMensagens: 'SendMessages',
+          adicionarReacoes: 'AddReactions'
+        };
+        let perms = {};
+        if (canal.permissoes) {
+          for (const chave in canal.permissoes) {
+            if (map[chave]) {
+              // Se for desbloquear (true), setar como null para neutro
+              if (canal.permissoes[chave] === true) {
+                perms[map[chave]] = null;
+              } else {
+                perms[map[chave]] = false;
+              }
+            }
+          }
+        }
+        await canalDiscord.permissionOverwrites.edit(everyoneRole, perms);
+        // --------------------------------------
         break outerLoop;
       }
     }
   }
 
   if (canalEncontrado) {
-    await upsert(COLLECTION_NAME, { _id: 'canais' }, { $set: canalConfig });
+    await updateOne(COLLECTION_NAME, { _id: 'canais' }, { $set: canalConfig }, { upsert: true });
     return [canalAlterado];
   }
 
@@ -77,13 +105,39 @@ async function alternarTodosCanais(interaction, canalConfig, guildId) {
         continue;
       }
 
-      canal.visivel = !canal.visivel;
+      // Alterna as permissões do objeto de configuração
+      if (canal.permissoes) {
+        for (const chave in canal.permissoes) {
+          canal.permissoes[chave] = !canal.permissoes[chave];
+        }
+      }
       canaisAlterados.push(canal);
+      // --- ALTERAÇÃO REAL DAS PERMISSÕES ---
+      const everyoneRole = interaction.guild.roles.everyone;
+      const map = {
+        enviarMensagens: 'SendMessages',
+        adicionarReacoes: 'AddReactions',
+        verCanal: 'ViewChannel',
+      };
+      let perms = {};
+      if (canal.permissoes) {
+        for (const chave in canal.permissoes) {
+          if (map[chave]) {
+            if (canal.permissoes[chave] === true) {
+              perms[map[chave]] = null;
+            } else {
+              perms[map[chave]] = false;
+            }
+          }
+        }
+      }
+      await canalDiscord.permissionOverwrites.edit(everyoneRole, perms);
+      // --------------------------------------
     }
   }
 
   if (canaisAlterados.length > 0) {
-    await upsert(COLLECTION_NAME, { _id: 'canais' }, { $set: canalConfig });
+    await updateOne(COLLECTION_NAME, { _id: 'canais' }, { $set: canalConfig }, { upsert: true });
   }
 
   return canaisAlterados;
@@ -93,9 +147,7 @@ async function registrarLog(interaction, canaisAfetados = []) {
   try {
     const canalConfig = await findOne('configuracoes', { _id: 'canais' });
     const statusConfig = await findOne('configuracoes', { _id: 'status' });
-    
     if (!canalConfig || !canalConfig.categorias) return;
-    
     let logChannelId = null;
     for (const categoria of canalConfig.categorias) {
       if (!categoria.canais) continue;
@@ -105,27 +157,71 @@ async function registrarLog(interaction, canaisAfetados = []) {
         break;
       }
     }
-
     if (!logChannelId) return;
-    
     const guild = interaction.guild;
     if (!guild) return;
-    
     const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
     if (!logChannel) return;
 
-    const embed = new EmbedBuilder()
-      .setColor(statusConfig.positive)
-      .setTitle('🔄 Permissões Alternadas')
-      .setDescription(`${interaction.user.tag} alterou as permissões de ${canaisAfetados.length} canal(is)`)
-      .addFields(
-        { 
-          name: 'Canais Afetados', 
-          value: canaisAfetados.map(c => `<#${c.id}>`).join('\n').slice(0, 1024) || 'Nenhum canal afetado'
+    // Novo embed igual ao ephemeral, mas com extras
+    let embed;
+    const userTag = `<@${interaction.user.id}>`;
+    if (canaisAfetados.length === 1) {
+      const canal = canaisAfetados[0];
+      const canalDiscord = interaction.guild.channels.cache.get(canal.id);
+      const everyoneRole = interaction.guild.roles.everyone;
+      const perms = canalDiscord.permissionOverwrites.cache.get(everyoneRole.id);
+      const bloqueado = perms && ((perms.deny.has('ViewChannel')) || perms.deny.has('SendMessages'));
+      // Descobrir quais permissões mudaram
+      const map = {
+        enviarMensagens: 'SendMessages',
+        adicionarReacoes: 'AddReactions'
+      };
+      let alteradas = [];
+      if (canal.permissoes) {
+        for (const chave in canal.permissoes) {
+          if (map[chave]) alteradas.push(map[chave]);
         }
-      )
-      .setTimestamp();
-
+      }
+      embed = new EmbedBuilder()
+        .setColor(gerarCorAleatoria())
+        .setTitle(bloqueado ? '🔒 Canal Bloqueado' : '🔓 Canal Desbloqueado')
+        .setDescription(`O canal <#${canal.id}> foi ${bloqueado ? 'bloqueado' : 'desbloqueado'} para conversação.`)
+        .addFields(
+          { name: 'Usuário', value: userTag, inline: true },
+          { name: 'Permissões alteradas', value: alteradas.length ? `\`${alteradas.join(', ')}\`` : 'Nenhuma' }
+        )
+        .setFooter({ text: `ID do canal: ${canal.id}` })
+        .setTimestamp();
+    } else {
+      // Para todos canais, mostrar resumo
+      const bloqueados = canaisAfetados.filter(c => c.visivel === false).length;
+      const desbloqueados = canaisAfetados.length - bloqueados;
+      // Permissões alteradas (únicas)
+      let alteradas = new Set();
+      const map = {
+        enviarMensagens: 'SendMessages',
+        adicionarReacoes: 'AddReactions',
+        verCanal: 'ViewChannel',
+      };
+      canaisAfetados.forEach(canal => {
+        if (canal.permissoes) {
+          for (const chave in canal.permissoes) {
+            if (map[chave]) alteradas.add(map[chave]);
+          }
+        }
+      });
+      embed = new EmbedBuilder()
+        .setColor(gerarCorAleatoria())
+        .setTitle('🔄 Permissões Alteradas')
+        .setDescription(`${userTag} alterou as permissões de ${canaisAfetados.length} canal(is).`)
+        .addFields(
+          { name: 'Canais bloqueados', value: String(bloqueados), inline: true },
+          { name: 'Canais desbloqueados', value: String(desbloqueados), inline: true },
+          { name: 'Permissões alteradas', value: alteradas.size ? `\`${[...alteradas].join(', ')}\`` : 'Nenhuma' }
+        )
+        .setTimestamp();
+    }
     await logChannel.send({ embeds: [embed] });
   } catch (error) {
     console.error('Erro ao registrar log:', error);
@@ -175,14 +271,38 @@ module.exports = {
 
       await registrarLog(interaction, canaisAfetados);
 
-      const mensagem = escopo === 'esse_canal' 
-        ? `✅ Permissões do canal ${canalAtual} foram alteradas com sucesso!`
-        : `✅ Permissões de ${canaisAfetados.length} canais foram alteradas com sucesso!`;
+      // Novo embed de resposta intuitivo
+      let embed;
+      if (escopo === 'esse_canal') {
+        const canal = canaisAfetados[0];
+        // Verifica o estado real das permissões após a alteração
+        const canalDiscord = interaction.guild.channels.cache.get(canal.id);
+        const everyoneRole = interaction.guild.roles.everyone;
+        const perms = canalDiscord.permissionOverwrites.cache.get(everyoneRole.id);
+        // Considera bloqueado se não pode ver ou enviar mensagens
+        const bloqueado = perms && ((perms.deny.has('ViewChannel')) || perms.deny.has('SendMessages'));
+        embed = new EmbedBuilder()
+          .setColor(gerarCorAleatoria())
+          .setTitle(bloqueado ? '🔒 Canal Bloqueado' : '🔓 Canal Desbloqueado')
+          .setDescription(`O canal ${canalAtual} foi ${bloqueado ? 'bloqueado' : 'desbloqueado'} para conversação.`)
+          .setFooter({ text: `ID do canal: ${canalAtual.id}` })
+          .setTimestamp();
+      } else {
+        // Para todos canais, mostrar resumo
+        const bloqueados = canaisAfetados.filter(c => c.visivel === false).length;
+        const desbloqueados = canaisAfetados.length - bloqueados;
+        embed = new EmbedBuilder()
+          .setColor(gerarCorAleatoria())
+          .setTitle('🔄 Permissões Alteradas')
+          .setDescription(`Foram alteradas as permissões de ${canaisAfetados.length} canais.`)
+          .addFields(
+            { name: 'Canais bloqueados', value: String(bloqueados), inline: true },
+            { name: 'Canais desbloqueados', value: String(desbloqueados), inline: true }
+          )
+          .setTimestamp();
+      }
 
-      await interaction.editReply({
-        content: mensagem,
-        flags: 'Ephemeral'
-      });
+      await interaction.editReply({ embeds: [embed], flags: 'Ephemeral' });
 
     } catch (erro) {
       console.error('Erro ao executar comando alternar:', erro);
