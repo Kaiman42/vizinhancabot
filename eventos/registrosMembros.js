@@ -229,26 +229,30 @@ module.exports = {
                 if (!member) continue;
                 const logChannel = await getLogChannel(guild);
                 if (!logChannel) continue;
-                const campos = [];
-                if (changedUsername) campos.push({
-                    name: 'Nome de usuário alterado',
-                    value: `De: ${oldUser.username}\nPara: ${newUser.username}`
-                });
-                if (changedDiscriminator) campos.push({
-                    name: 'Discriminador alterado',
-                    value: `De: #${oldUser.discriminator}\nPara: #${newUser.discriminator}`
-                });
-                if (changedAvatar) campos.push({
-                    name: 'Avatar alterado',
-                    value: `[Clique para ver o novo avatar](https://cdn.discordapp.com/avatars/${newUser.id}/${newUser.avatar}.png)`
-                });
+                let descricao = `<@${newUser.id}>`;
+                if (changedUsername && changedDiscriminator) {
+                    descricao += ` alterou o nome de usuário e discriminador.`;
+                } else if (changedUsername) {
+                    descricao += ` alterou o nome de usuário.`;
+                } else if (changedDiscriminator) {
+                    descricao += ` alterou o discriminador.`;
+                } else if (changedAvatar) {
+                    descricao += ` alterou o avatar.`;
+                }
+                if (changedUsername) {
+                    descricao += `\nDe: ${oldUser.username}\nPara: ${newUser.username}`;
+                }
+                if (changedDiscriminator) {
+                    descricao += `\nDe: #${oldUser.discriminator}\nPara: #${newUser.discriminator}`;
+                }
                 const embed = criarEmbed({
                     cor: 0xFFA500,
                     titulo: '📝 Perfil atualizado',
-                    descricao: `Usuário: [${newUser.tag}](https://discord.com/users/${newUser.id})`,
-                    thumb: newUser.displayAvatarURL({ dynamic: true }),
-                    campos
+                    descricao,
+                    thumb: newUser.displayAvatarURL({ dynamic: true })
                 });
+                embed.setFooter({ text: `ID: ${newUser.id}` });
+                embed.setTimestamp();
                 logChannel.send({ embeds: [embed] });
             }
         });
