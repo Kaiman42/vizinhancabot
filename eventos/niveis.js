@@ -213,9 +213,9 @@ class DatabaseService {
   static async recordLevelUpHistory(ignisContext, userId, username, newLevel, guildId) {
     try {
       await database.ensureCollection(database.COLLECTIONS.TEMPORARIO);
-      await database.insertOne(database.COLLECTIONS.TEMPORARIO, {
-        _id: userId, // O id do usuário é o identificador do documento
+      await database.getCollection(database.COLLECTIONS.TEMPORARIO).insertOne({
         type: 'levelUp',
+        userId, // salva o id do usuário em outro campo
         username,
         level: newLevel,
         guildId
@@ -354,7 +354,7 @@ class NotificationService {
       const user = userOrMember.user || userOrMember.author || userOrMember;
       const userId = user.id;
       const recompensaTotal = 75 + Math.floor(Math.random() * 76);
-      await economia.adicionarSaldo(userId, recompensaTotal);
+      await economia.alterarSaldo(userId, recompensaTotal);
       const barraRecompensa = criarBarraProgresso(recompensaTotal, 150, {
         comprimento: 15, caracterPreenchido: '■', caracterVazio: '□', incluirPorcentagem: true
       });

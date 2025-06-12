@@ -21,7 +21,7 @@ async function restaurarLembretesBump(client) {
     if (tempoRestante > 0) {
       setTimeout(async () => {
         try {
-          const channel = await global.client.channels.fetch(lembrete.canalId);
+          const channel = await client.channels.fetch(lembrete.canalId);
           await channel.send('<@&1357740740058419391> É hora de dar um novo bump! Use `/bump` para promover o servidor.');
           await temporarioCollection.deleteOne({ _id: lembrete._id });
         } catch (error) {
@@ -73,7 +73,7 @@ module.exports = {
       const result = await temporarioCollection.insertOne(bumpReminder);
       setTimeout(async () => {
         try {
-          const channel = await global.client.channels.fetch(bumpChannel.id);
+          const channel = await client.channels.fetch(bumpChannel.id);
           await channel.send('<@&1357740740058419391> É hora de dar um novo bump! Use `/bump` para promover o servidor.');
           await getTemporarioCollection().deleteOne({ _id: result.insertedId });
         } catch (error) {

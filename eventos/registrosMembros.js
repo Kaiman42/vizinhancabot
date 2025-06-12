@@ -1,5 +1,8 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { getRegistroMembrosChannelId, findOne } = require('../mongodb');
+const path = require('path');
+const banPath = path.join(__dirname, '../comandos/mod/ban.js');
+const { criarBanEmbed } = require(banPath);
 
 const EXECUTOR_DESCONHECIDO = 'Desconhecido';
 const MOTIVO_NAO_INFORMADO = 'Não informado';
@@ -75,6 +78,15 @@ module.exports = {
         });
 
         client.on(Events.GuildMemberRemove, async member => {
+            // Verifica se o usuário foi banido consultando a lista de bans
+            let isBanned = false;
+            try {
+                await member.guild.bans.fetch(member.id);
+                isBanned = true;
+            } catch (e) {
+                isBanned = false;
+            }
+            if (isBanned) return; // Ignora log de saída se foi banido
             const logChannel = await getLogChannel(member.guild);
             if (!logChannel) return;
             let titulo = member.user.bot ? '🤖 Bot saiu' : '👤 Membro saiu';
@@ -113,21 +125,26 @@ module.exports = {
         });
 
         client.on(Events.GuildBanAdd, async ban => {
+            recentlyBanned.add(ban.user.id);
             const logChannel = await getLogChannel(ban.guild);
             if (!logChannel) return;
             const executor = await getExecutorFromAudit(ban.guild, AuditLogEvent.MemberBanAdd, ban.user.id);
             const motivo = await getMotivoFromAudit(ban.guild, AuditLogEvent.MemberBanAdd, ban.user.id);
-            const embed = criarEmbed({
-                cor: 0xED4245,
-                titulo: '🚫 Usuário Banido',
-                descricao: `<@${ban.user.id}> foi banido do servidor.`,
-                thumb: ban.user.displayAvatarURL({ dynamic: true })
-            });
-            embed.addFields(
-                { name: 'Conta criada', value: `<t:${Math.floor(ban.user.createdTimestamp/1000)}:R>`, inline: false },
-                { name: 'Executor', value: executor, inline: false },
-                { name: 'Motivo', value: motivo, inline: false }
+            // Cria um objeto interaction fake para o embed
+            const fakeInteraction = {
+                guild: ban.guild,
+                user: { id: executor !== EXECUTOR_DESCONHECIDO ? executor.id : '0', tag: executor },
+            };
+            // Usar criarBanEmbed para manter padrão visual
+            const embed = criarBanEmbed(
+                ban.user,
+                motivo,
+                false,
+                fakeInteraction,
+                { origem: 'manual' }
             );
+            embed.addFields({ name: 'Origem', value: '`Manual`', inline: false });
+            embed.addFields({ name: 'Executor', value: executor, inline: false });
             embed.setFooter({ text: `${ban.user.id}` });
             logChannel.send({ embeds: [embed] });
         });

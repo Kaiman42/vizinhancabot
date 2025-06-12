@@ -75,6 +75,9 @@ function criarBanEmbed(user, reason, deleteMsgs, interaction, options = {}) {
     if (user.displayAvatarURL) {
         embed.setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }));
     }
+    if (options.origem) {
+        embed.addFields({ name: 'Origem', value: options.origem.charAt(0).toUpperCase() + options.origem.slice(1), inline: false });
+    }
     return embed;
 }
 
