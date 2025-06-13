@@ -3,7 +3,6 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('dis
 const { gerarCorAleatoria } = require('../../configuracoes/randomColor.js');
 const path = require('path');
 const mongodb = require(path.resolve(__dirname, '../../mongodb.js'));
-const economia = require('../../configuracoes/economia.js');
 const { criarBarraProgresso } = require('../../configuracoes/barraProgresso.js');
 
 module.exports = {
@@ -43,7 +42,7 @@ module.exports = {
 
             const statusMap = {
                 online: '🟢 Online',
-                idle: '🟠 Ausente',
+                idle: '🟡 Ausente',
                 dnd: '🔴 Não perturbe'
             };
 
@@ -62,8 +61,7 @@ module.exports = {
                     { name: '📅 Criou desde', value: `> ${new Date(targetUser.createdAt).toLocaleDateString('pt-BR')}`, inline: true },
                     { name: '🏠 Membro desde', value: `> ${new Date(member.joinedAt).toLocaleDateString('pt-BR')}`, inline: true },
                     { name: '🚀 Impulsor', value: `> ${member.premiumSince ? 'Sim' : 'Não'}`, inline: true },
-                    { name: '📊 Status', value: `> ${status}`, inline: true },
-                    { name: '💲 Grama(s)', value: `> ${(await economia.obterSaldo(targetUser.id)).toLocaleString('pt-BR')}`, inline: true },
+                    { name: '📈 Status', value: `> ${status}`, inline: true },
                     { name: '🔰 Cargo de Rank', value: `> ${cargoNome}`, inline: true },
                     { name: '🏆 Rank', value: `> ${rankDisplay}`, inline: true },
                     { name: '👑 Possui', value: userRoles, inline: true },

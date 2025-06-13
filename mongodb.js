@@ -73,7 +73,7 @@ async function initializeCollections() {
   try {
     // Inicializar coleção de dados dos usuários
     await ensureCollection(COLLECTIONS.DADOS_USUARIOS);
-    const userDataDocs = ['economias', 'evitar_spam'];
+    const userDataDocs = ['evitar_spam'];
     await Promise.all(userDataDocs.map(doc => 
       updateOne(COLLECTIONS.DADOS_USUARIOS, 
         { _id: doc }, 

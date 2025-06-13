@@ -3,7 +3,6 @@ const { gerarCorAleatoria } = require('../configuracoes/randomColor.js');
 const path = require('path');
 const database = require(path.resolve(__dirname, '../mongodb.js'));
 const { criarBarraProgresso } = require('../configuracoes/barraProgresso.js');
-const economia = require('../configuracoes/economia.js');
 
 // --- Funções utilitárias centralizadas ---
 function logError(context, error) {
@@ -354,7 +353,7 @@ class NotificationService {
       const user = userOrMember.user || userOrMember.author || userOrMember;
       const userId = user.id;
       const recompensaTotal = 75 + Math.floor(Math.random() * 76);
-      await economia.alterarSaldo(userId, recompensaTotal);
+      // await economia.alterarSaldo(userId, recompensaTotal); // Sistema de economia removido
       const barraRecompensa = criarBarraProgresso(recompensaTotal, 150, {
         comprimento: 15, caracterPreenchido: '■', caracterVazio: '□', incluirPorcentagem: true
       });
