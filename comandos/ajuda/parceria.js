@@ -7,9 +7,8 @@ module.exports = {
         .setName('parceria')
         .setDescription('Exibe os requisitos para a formação de uma parceria.'),
     async execute(interaction) {
-        // Notificação no canal de registros-membros
         const mongoUri = process.env.MONGO_URI;
-        const { user, member, guild, client } = interaction;
+        const { user, guild } = interaction;
         let cor = gerarCorAleatoria();
         try {
             const canalId = await getRegistroMembrosChannelId(mongoUri);
@@ -62,27 +61,30 @@ Clique no botão abaixo e notifique sua intenção de parceria e você será res
                 const responsavel = await interaction.client.users.fetch('1199908820135194677');
                 const { user, member } = interaction;
 
+                const campos = [
+                    { name: '📋 Nome', value: user.username, inline: true },
+                    { name: '🆔 ID', value: user.id, inline: true },
+                    { name: '📅 Conta Criada', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+                    member?.joinedTimestamp ? {
+                        name: '📥 Entrou no Servidor',
+                        value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`,
+                        inline: true
+                    } : null
+                ].filter(Boolean);
+
                 const embed = new EmbedBuilder()
                     .setColor(0x4B0082)
                     .setTitle('Nova Solicitação de Parceria')
                     .setAuthor({ name: user.username, iconURL: user.displayAvatarURL({ dynamic: true }) })
                     .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }))
                     .setDescription(`O usuário [${user.username}](https://discord.com/users/${user.id}) solicitou informações sobre parceria.`)
-                    .addFields(
-                        { name: '📋 Nome', value: user.username, inline: true },
-                        { name: '🆔 ID', value: user.id, inline: true },
-                        { name: '📅 Conta Criada', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-                        member?.joinedTimestamp ? {
-                            name: '📥 Entrou no Servidor',
-                            value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`,
-                            inline: true
-                        } : null
-                    ).filter(field => field)
+                    .addFields(...campos)
                     .setTimestamp();
 
                 await responsavel.send({ embeds: [embed] });
                 await i.update({ content: 'O responsável foi notificado com sucesso!', components: [disabledRow] });
-            } catch {
+            } catch (err) {
+                console.error('Erro ao notificar responsável:', err); // Adicionado log detalhado
                 await i.update({ content: 'Não foi possível notificar o responsável.', components: [disabledRow] });
             }
         });
