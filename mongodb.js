@@ -92,8 +92,14 @@ async function getRegistroMembrosChannelId(mongoUri) {
 }
 
 async function getErrosComando() {
-    return await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'erros-comando' });
+    try {
+        return await find(COLLECTIONS.CONFIGURACOES, { _id: 'erros-comando' }, { findOne: true });
+    } catch (error) {
+        console.error('Erro ao buscar erros de comando:', error);
+        return null;
+    }
 }
+
 module.exports = {
   COLLECTIONS,
   getCollection,

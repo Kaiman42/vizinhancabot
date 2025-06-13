@@ -4,37 +4,50 @@ const path = require('path');
 const mongodb = require(path.resolve(__dirname, '../../mongodb.js'));
 const { gerarCorAleatoria } = require(path.resolve(__dirname, '../../configuracoes/randomColor.js'));
 
-// Classes de erro
-class RadioError extends Error {
-    constructor(message, code) {
-        super(message);
-        this.name = 'RadioError';
-        this.code = code;
+// Função utilitária para buscar mensagem de erro do banco
+async function getMensagemErroRadio(codigo, data = {}) {
+    try {
+        const errosComando = await mongodb.getErrosComando();
+        let mensagem;
+        
+        // Procura primeiro nos erros específicos da rádio
+        if (errosComando?.erros?.radio?.[codigo]?.content) {
+            mensagem = errosComando.erros.radio[codigo].content;
+        }
+        // Se não encontrar, procura nos erros gerais
+        else if (errosComando?.erros?.gerais?.[codigo]?.content) {
+            mensagem = errosComando.erros.gerais[codigo].content;
+        }
+        else {
+            return `❌ Erro inesperado [${codigo}]`;
+        }
+
+        // Substituir placeholders
+        if (data.userId) {
+            mensagem = mensagem.replace('[USER]', `<@${data.userId}>`);
+        }
+        if (data.roleId) {
+            mensagem = mensagem.replace('ROLE_ID', data.roleId);
+        }
+        if (data.channelId) {
+            mensagem = mensagem.replace('CHANNEL_ID', data.channelId);
+        }
+
+        return mensagem;
+    } catch (e) {
+        return `❌ Erro inesperado [${codigo}]`;
     }
 }
 
-// Constantes e configurações
-const ERROS_RADIO = {
-    NENHUM_CANAL: '❌ Você precisa estar em um canal de voz para usar este comando.',
-    SEM_CARGO_DJ: '❌ Você precisa ter o cargo de DJ para usar este comando.',
-    SEM_PERMISSAO: '❌ Você não tem permissão para usar este comando.',
-    CANAL_ERRADO: (channelId) => `❌ Este comando só pode ser usado no canal <#${channelId}>.`,
-    RADIO_TOCANDO: '❌ O bot já está executando uma rádio no momento.',
-    CONTROLADOR_SOMENTE: (ownerId) => `❌ Apenas <@${ownerId}> pode controlar a rádio nesta sessão.`,
-    NENHUMA_RADIO: (country) => `❌ Nenhuma rádio encontrada para ${country}.`,
-    URL_INVALIDA: (name) => `❌ URL inválida para a rádio ${name}`,
-    ERRO_GENERICO: (error) => `❌ Ocorreu um erro: ${error.message}`
-};
-
-const LIMITS = {
-    REQUISICOES: {
-        max: 3,
-        window: 10000
-    },
-    TIMER_INATIVIDADE: 15000,
-    DEFAULT_VOLUME: 0.5,
-    VOLUME_MAX: 1.0
-};
+// Classes de erro
+class RadioError extends Error {
+    constructor(code, data = {}) {
+        super();
+        this.name = 'RadioError';
+        this.code = code;
+        this.data = data;
+    }
+}
 
 // Estados globais
 const players = new Map();
@@ -47,6 +60,17 @@ const voiceTimeouts = new Map();
 let radioCache = null;
 let lastCacheTime = 0;
 const CACHE_DURATION = 300000; // 5 minutos
+
+// Constantes e limitações
+const LIMITS = {
+    REQUISICOES: {
+        max: 3,
+        window: 10000
+    },
+    TIMER_INATIVIDADE: 15000,
+    DEFAULT_VOLUME: 0.3, // 30% de volume para proteger os ouvidos
+    VOLUME_MAX: 1.0
+};
 
 // Funções de verificação e permissões
 async function hasDjRole(member) {
@@ -98,33 +122,33 @@ async function getChannels(guildId) {
 async function checkRadioPermissions(interaction) {
     // Verifica cargo DJ
     if (!(await hasDjRole(interaction.member))) {
-        throw new RadioError(ERROS_RADIO.NO_DJ_ROLE);
+        throw new RadioError('CARGO_NECESSARIO', { roleId: interaction.guild.roles.cache.find(r => r.name === 'DJ')?.id });
     }
 
     // Obtém os canais antes de verificá-los
     const channels = await getChannels(interaction.guild.id);
 
     if (!channels) {
-      throw new RadioError('❌ Configuração de canais não encontrada.');
+      throw new RadioError('CANAL_NAO_ENCONTRADO');
     }
     
     if (!channels?.botChannelId) {
-        throw new RadioError('❌ Configuração de canais não encontrada.');
+        throw new RadioError('CANAL_NAO_ENCONTRADO');
     }
 
     if (interaction.channel.id !== channels.botChannelId) {
-        throw new RadioError(ERROS_RADIO.CANAL_ERRADO(channels.botChannelId));
+        throw new RadioError('CANAL_ERRADO', { channelId: channels.botChannelId });
     }
 
     // Verifica canal de voz
     if (!interaction.member.voice.channel) {
-        throw new RadioError(ERROS_RADIO.NENHUM_CANAL);
+        throw new RadioError('CANAL_VOZ');
     }
 
     // Verifica dono da rádio
     const guildId = interaction.guild.id;
     if (radioOwners.has(guildId) && radioOwners.get(guildId) !== interaction.user.id) {
-        throw new RadioError(ERROS_RADIO.CONTROLADOR_SOMENTE(radioOwners.get(guildId)));
+        throw new RadioError('NAO_HOST', { userId: radioOwners.get(guildId) });
     }
 
     return { channels };
@@ -221,18 +245,20 @@ async function getCachedRadios() {
 }
 
 async function handleRadioError(error, interaction) {
-    console.error('Erro na rádio:', error);
+    let mensagem = error.message;
+    if (error instanceof RadioError && error.code) {
+        mensagem = await getMensagemErroRadio(error.code, error.data);
+    }
     try {
+        const options = { 
+            content: mensagem,
+            flags: ['Ephemeral']
+        };
+
         if (interaction.deferred || interaction.replied) {
-            await interaction.editReply({
-                content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
-                ephemeral: true
-            });
+            await interaction.editReply(options);
         } else {
-            await interaction.reply({
-                content: error.message || ERROS_RADIO.ERRO_GENERICO(error),
-                ephemeral: true
-            });
+            await interaction.reply(options);
         }
     } catch (err) {
         console.error("Failed to send error message:", err);
@@ -267,16 +293,16 @@ async function setupVoiceConnection(interaction) {
 
 function validateRadioSelection(radios, country, radioIndex) {
     if (!radios[country] || !Array.isArray(radios[country])) {
-        throw new RadioError(ERROS_RADIO.NENHUMA_RADIO(country));
+        throw new RadioError('SEM_SESSAO');
     }
 
     if (radioIndex < 0 || radioIndex >= radios[country].length) {
-        throw new RadioError(ERROS_RADIO.CANAL_ERRADO(radioIndex));
+        throw new RadioError('CANAL_ERRADO');
     }
 
     const radio = radios[country][radioIndex];
     if (!radio.url) {
-        throw new RadioError(ERROS_RADIO.URL_INVALIDA(radio.name));
+        throw new RadioError('URL_INVALIDA');
     }
 
     return radio;

@@ -117,8 +117,8 @@ module.exports = {
                     }
                     await registrarPrestigio(targetUser.id, i.user.id);
                     await i.reply({ 
-                        content: errosComando.erros.perfil.SUCESSO_PRESTIGIO.content,
-                        flags: errosComando.erros.perfil.SUCESSO_PRESTIGIO.flags
+                        content: '⭐ Prestígio concedido com sucesso!',
+                        flags: 'Ephemeral'
                     });
                 }
             });
