@@ -6,7 +6,6 @@ const COLLECTIONS = {
   PRESTIGIOS: 'prestigios'
 };
 
-// Função auxiliar para tratamento de erros
 const handleDbError = (operation, collection, error) => {
   console.error(`Erro ao ${operation} em ${collection}:`, error);
   throw error;
@@ -19,7 +18,6 @@ function getCollection(collectionName) {
   return global.ignisContext.database.collection(collectionName);
 }
 
-// Operações básicas do banco de dados
 async function find(collectionName, query, options = {}) {
   try {
     const collection = getCollection(collectionName);
@@ -60,32 +58,11 @@ async function ensureCollection(collectionName, defaultDoc = null) {
   }
 }
 
-// Configurações iniciais
-const DEFAULT_CONFIGS = {
-  radios: { Kaiman: [] },
-  cores: {},
-  escopos: {},
-  patentes: {},
-  canais: {}
-};
-
 async function initializeCollections() {
   try {
 
-    // Inicializar coleção de níveis
     await ensureCollection(COLLECTIONS.NIVEIS);
 
-    // Inicializar configurações
-    await ensureCollection(COLLECTIONS.CONFIGURACOES);
-    await Promise.all(Object.entries(DEFAULT_CONFIGS).map(([config, defaultValue]) =>
-      updateOne(COLLECTIONS.CONFIGURACOES,
-        { _id: config },
-        { $setOnInsert: { _id: config, ...defaultValue } },
-        { upsert: true }
-      )
-    ));
-
-    // Inicializar coleção de prestígios
     await ensureCollection(COLLECTIONS.PRESTIGIOS);
 
     return true;
@@ -117,8 +94,6 @@ async function getRegistroMembrosChannelId(mongoUri) {
 async function getErrosComando() {
     return await mongodb.findOne(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'erros-comando' });
 }
-
-// Exportar apenas o necessário
 module.exports = {
   COLLECTIONS,
   getCollection,
@@ -127,6 +102,6 @@ module.exports = {
   updateOne,
   ensureCollection,
   initializeCollections,
-  getRegistroMembrosChannelId, // exporta a função utilitária
+  getRegistroMembrosChannelId,
   getErrosComando,
 };
