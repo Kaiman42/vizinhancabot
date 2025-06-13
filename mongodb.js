@@ -1,9 +1,9 @@
 const COLLECTIONS = {
   DADOS_USUARIOS: 'dadosUsuarios',
   CONFIGURACOES: 'configuracoes',
-  TEMPORARIO: 'temporario',
-  NIVEIS: 'niveis', // Nova coleção para progressão de nível
-  PRESTIGIOS: 'prestigios' // Coleção para dados de prestígio
+  LEMBRETES: 'lembretes',
+  NIVEIS: 'niveis',
+  PRESTIGIOS: 'prestigios'
 };
 
 // Função auxiliar para tratamento de erros
@@ -71,16 +71,6 @@ const DEFAULT_CONFIGS = {
 
 async function initializeCollections() {
   try {
-    // Inicializar coleção de dados dos usuários
-    await ensureCollection(COLLECTIONS.DADOS_USUARIOS);
-    const userDataDocs = ['evitar_spam'];
-    await Promise.all(userDataDocs.map(doc => 
-      updateOne(COLLECTIONS.DADOS_USUARIOS, 
-        { _id: doc }, 
-        { $setOnInsert: { _id: doc } }, 
-        { upsert: true }
-      )
-    ));
 
     // Inicializar coleção de níveis
     await ensureCollection(COLLECTIONS.NIVEIS);
