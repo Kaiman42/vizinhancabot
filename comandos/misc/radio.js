@@ -1,8 +1,28 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, StreamType, VoiceConnectionStatus, AudioPlayerStatus } = require('@discordjs/voice');
 const path = require('path');
 const mongodb = require(path.resolve(__dirname, '../../mongodb.js'));
 const { gerarCorAleatoria } = require(path.resolve(__dirname, '../../configuracoes/randomColor.js'));
+
+// Configuração do player de áudio
+const player = createAudioPlayer({
+    behaviors: {
+        noSubscriber: 'pause',
+    }
+});
+
+// Monitoramento de status do player
+player.on(AudioPlayerStatus.Playing, () => {
+    console.log('O player começou a tocar!');
+});
+
+player.on(AudioPlayerStatus.Idle, () => {
+    console.log('O player está ocioso.');
+});
+
+player.on('error', error => {
+    console.error(`Erro no player: ${error.message}`);
+});
 
 // Função utilitária para buscar mensagem de erro do banco
 async function getMensagemErroRadio(codigo, data = {}) {
@@ -276,14 +296,45 @@ async function setupVoiceConnection(interaction) {
             channelId: voiceChannel.id,
             guildId: guildId,
             adapterCreator: interaction.guild.voiceAdapterCreator,
+            selfDeaf: false,
+            selfMute: false
         });
+
+        // Adiciona tratamento de eventos da conexão
+        connection.on(VoiceConnectionStatus.Ready, () => {
+            console.log(`Conexão pronta em ${guildId}`);
+        });
+
+        connection.on(VoiceConnectionStatus.Disconnected, async () => {
+            try {
+                await Promise.race([
+                    entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+                    entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+                ]);
+            } catch (error) {
+                connection.destroy();
+                connections.delete(guildId);
+                players.delete(guildId);
+                radioOwners.delete(guildId);
+            }
+        });
+
         connections.set(guildId, connection);
         radioOwners.set(guildId, interaction.user.id);
     }
 
     let player = players.get(guildId);
     if (!player) {
-        player = createAudioPlayer();
+        player = createAudioPlayer({
+            behaviors: {
+                noSubscriber: 'pause',
+            }
+        });
+
+        player.on('error', error => {
+            console.error(`Erro no player do servidor ${guildId}: ${error.message}`);
+        });
+
         players.set(guildId, player);
         connection.subscribe(player);
     }
@@ -374,12 +425,40 @@ async function handlePlay(interaction) {
         const radio = radios[radioIndex];
         const { player, voiceChannel } = await setupVoiceConnection(interaction);
 
-        const resource = createAudioResource(radio.url, {
-            inlineVolume: true,
-        });
-        resource.volume?.setVolume(LIMITS.DEFAULT_VOLUME);
-        player.play(resource);        const embed = createRadioEmbed(radio, interaction, radioIndex, radios.length, voiceChannel);
-          // Criar menu seletor paginado para troca rápida
+        try {
+            const resource = createAudioResource(radio.url, {
+                inputType: StreamType.Arbitrary,
+                inlineVolume: true,
+            });
+            
+            resource.volume?.setVolume(LIMITS.DEFAULT_VOLUME);
+            
+            player.play(resource);
+            
+            // Aguardar o início da reprodução ou erro
+            await new Promise((resolve, reject) => {
+                const playTimeout = setTimeout(() => {
+                    reject(new Error('Timeout ao iniciar reprodução'));
+                }, 10000);
+
+                player.once(AudioPlayerStatus.Playing, () => {
+                    clearTimeout(playTimeout);
+                    resolve();
+                });
+
+                player.once('error', (error) => {
+                    clearTimeout(playTimeout);
+                    reject(error);
+                });
+            });
+
+        } catch (error) {
+            console.error(`Erro ao reproduzir rádio: ${error.message}`);
+            throw error;
+        }
+
+        const embed = createRadioEmbed(radio, interaction, radioIndex, radios.length, voiceChannel);
+        // Criar menu seletor paginado para troca rápida
         const radiosPerPage = 24; // Máximo de 25 opções, deixando 24 para melhor divisão
         const currentPage = Math.floor(radioIndex / radiosPerPage);
         const startIndex = currentPage * radiosPerPage;
