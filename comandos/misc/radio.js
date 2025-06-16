@@ -429,6 +429,12 @@ async function handlePlay(interaction) {
             const resource = createAudioResource(radio.url, {
                 inputType: StreamType.Arbitrary,
                 inlineVolume: true,
+                // Forçando o uso do FFmpeg ao invés do prism-media
+                format: {
+                    type: 'arbitrary',
+                    encoder: 'ffmpeg',
+                    demuxer: 'ffmpeg'
+                }
             });
             
             resource.volume?.setVolume(LIMITS.DEFAULT_VOLUME);
