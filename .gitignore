@@ -81,5 +81,8 @@ dist
 # Git
 .gitignore
 
-#Pastas
+# Directories
 scripts
+
+# Archives
+radio.js

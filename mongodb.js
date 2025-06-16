@@ -1,21 +1,35 @@
 const COLLECTIONS = {
-  DADOS_USUARIOS: 'dadosUsuarios',
   CONFIGURACOES: 'configuracoes',
   LEMBRETES: 'lembretes',
   NIVEIS: 'niveis',
-  PRESTIGIOS: 'prestigios'
+  PRESTIGIOS: 'prestigios',
+  BUMP: 'bump'
 };
+
+let client = null;
+let database = null;
 
 const handleDbError = (operation, collection, error) => {
   console.error(`Erro ao ${operation} em ${collection}:`, error);
   throw error;
 };
 
-function getCollection(collectionName) {
-  if (!global.ignisContext?.database) {
-    throw new Error('Contexto de banco de dados não inicializado.');
+async function connect(mongoUri) {
+  if (!client) {
+    const { MongoClient } = require('mongodb');
+    client = new MongoClient(mongoUri);
+    await client.connect();
+    database = client.db('ignis');
+    global.ignisContext = { database };
   }
-  return global.ignisContext.database.collection(collectionName);
+  return database;
+}
+
+function getCollection(collectionName) {
+  if (!database) {
+    throw new Error('Conexão com o banco de dados não inicializada. Chame connect() primeiro.');
+  }
+  return database.collection(collectionName);
 }
 
 async function find(collectionName, query, options = {}) {
@@ -102,6 +116,7 @@ async function getErrosComando() {
 
 module.exports = {
   COLLECTIONS,
+  connect,
   getCollection,
   find,
   findOne: (collectionName, query) => find(collectionName, query, { findOne: true }),
