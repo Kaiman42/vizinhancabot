@@ -1,11 +1,36 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { getRegistroMembrosChannelId, findOne } = require('../mongodb');
+const mongodb = require('../mongodb');
 const path = require('path');
 const banPath = path.join(__dirname, '../comandos/mod/ban.js');
 const { criarBanEmbed } = require(banPath);
 
 const EXECUTOR_DESCONHECIDO = 'Desconhecido';
 const MOTIVO_NAO_INFORMADO = 'Não informado';
+
+// Função única para obter o canal de logs
+async function getLogChannel(guild) {
+    try {
+        const canaisDoc = await mongodb.find(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'canais' }, { findOne: true });
+        if (!canaisDoc || !Array.isArray(canaisDoc.categorias)) return null;
+        
+        for (const categoria of canaisDoc.categorias) {
+            if (!Array.isArray(categoria.canais)) continue;
+            const canal = categoria.canais.find(c => c.nome === 'registros-membros');
+            if (canal) {
+                const channel = guild.channels.cache.get(canal.id);
+                if (!channel || !channel.isTextBased?.() || !channel.viewable || 
+                    !channel.permissionsFor(guild.members.me).has('SendMessages')) {
+                    return null;
+                }
+                return channel;
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('Erro ao buscar canal de registros:', error);
+        return null;
+    }
+}
 
 function criarEmbed({ cor, titulo, descricao, thumb, campos }) {
     const embed = new EmbedBuilder()
@@ -18,9 +43,8 @@ function criarEmbed({ cor, titulo, descricao, thumb, campos }) {
     return embed;
 }
 
-// Reescrever getStatusConfig para usar findOne utilitário
 async function getStatusConfig() {
-    return await findOne('configuracoes', { _id: 'status' });
+    return await mongodb.find(mongodb.COLLECTIONS.CONFIGURACOES, { _id: 'status' }, { findOne: true });
 }
 
 async function getExecutorFromAudit(guild, type, targetId, extraFilter) {
@@ -49,17 +73,7 @@ module.exports = {
     name: 'ready',
     once: true,
     async execute(client) {
-        const mongoUri = process.env.MONGO_URI;
-        const statusConfig = await getStatusConfig(mongoUri);
-        async function getLogChannel(guild) {
-            const canalId = await getRegistroMembrosChannelId(mongoUri);
-            if (!canalId) return null;
-            const channel = guild.channels.cache.get(canalId);
-            if (!channel || !channel.isTextBased?.() || !channel.viewable || !channel.permissionsFor(guild.members.me).has('SendMessages')) {
-                return null;
-            }
-            return channel;
-        }
+        const statusConfig = await getStatusConfig();
 
         client.on(Events.GuildMemberAdd, async member => {
             const logChannel = await getLogChannel(member.guild);

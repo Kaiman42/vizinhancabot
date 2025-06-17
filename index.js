@@ -29,9 +29,14 @@ async function initializeBot() {
     const databaseHandler = new DatabaseHandler();
 
     global.commandHandler = commandHandler;
-    // Só define ignisContext após conectar ao banco
+    
+    // Inicializa o banco de dados
     await databaseHandler.connect(botClient);
-    global.ignisContext = { client: botClient, database: databaseHandler.mongoClient.db('ignis') };
+    
+    // Adiciona o client ao contexto existente
+    if (global.ignisContext) {
+        global.ignisContext.client = botClient;
+    }
     
     commandHandler.load(path.join(__dirname, 'comandos'));
     await commandHandler.register();

@@ -15,14 +15,22 @@ const handleDbError = (operation, collection, error) => {
 };
 
 async function connect(mongoUri) {
-  if (!client) {
-    const { MongoClient } = require('mongodb');
-    client = new MongoClient(mongoUri);
-    await client.connect();
-    database = client.db('ignis');
-    global.ignisContext = { database };
+  try {
+    if (!client) {
+      const { MongoClient } = require('mongodb');
+      client = new MongoClient(mongoUri);
+      
+      await client.connect();
+      database = client.db('ignis');
+      global.ignisContext = { database };
+      
+      console.log('[DB] Conexão com MongoDB estabelecida com sucesso');
+    }
+    return database;
+  } catch (error) {
+    console.error('[DB] Erro ao conectar com MongoDB:', error);
+    throw error;
   }
-  return database;
 }
 
 function getCollection(collectionName) {
@@ -35,9 +43,10 @@ function getCollection(collectionName) {
 async function find(collectionName, query, options = {}) {
   try {
     const collection = getCollection(collectionName);
-    return options.findOne 
-      ? await collection.findOne(query)
-      : await collection.find(query).toArray();
+    if (options.findOne) {
+      return await collection.findOne(query);
+    }
+    return await collection.find(query).toArray();
   } catch (error) {
     handleDbError('buscar', collectionName, error);
   }
@@ -57,11 +66,14 @@ async function ensureCollection(collectionName, defaultDoc = null) {
       throw new Error(`Nome de coleção inválido: ${collectionName}`);
     }
     
-    const db = global.ignisContext.database;
-    const collections = await db.listCollections().toArray();
+    if (!database) {
+      throw new Error('Banco de dados não inicializado');
+    }
+
+    const collections = await database.listCollections().toArray();
     
     if (!collections.some(col => col.name === collectionName)) {
-      await db.createCollection(collectionName);
+      await database.createCollection(collectionName);
       if (defaultDoc) {
         await getCollection(collectionName).insertOne(defaultDoc);
       }
@@ -74,11 +86,9 @@ async function ensureCollection(collectionName, defaultDoc = null) {
 
 async function initializeCollections() {
   try {
-
     await ensureCollection(COLLECTIONS.NIVEIS);
-
     await ensureCollection(COLLECTIONS.PRESTIGIOS);
-
+    await ensureCollection(COLLECTIONS.BUMP);
     return true;
   } catch (error) {
     console.error('Erro ao inicializar coleções:', error);
@@ -86,43 +96,28 @@ async function initializeCollections() {
   }
 }
 
-async function getRegistroMembrosChannelId(mongoUri) {
-    const { MongoClient } = require('mongodb');
-    const client = new MongoClient(mongoUri);
-    try {
-        await client.connect();
-        const db = client.db('ignis');
-        const canaisDoc = await db.collection('configuracoes').findOne({ _id: 'canais' });
-        if (!canaisDoc || !Array.isArray(canaisDoc.categorias)) return null;
-        for (const categoria of canaisDoc.categorias) {
-            if (!Array.isArray(categoria.canais)) continue;
-            const canal = categoria.canais.find(c => c.nome === 'registros-membros');
-            if (canal) return canal.id;
-        }
-        return null;
-    } finally {
-        await client.close();
-    }
+function isConnected() {
+  return database !== null && client?.topology?.isConnected();
 }
 
-async function getErrosComando() {
-    try {
-        return await find(COLLECTIONS.CONFIGURACOES, { _id: 'erros-comando' }, { findOne: true });
-    } catch (error) {
-        console.error('Erro ao buscar erros de comando:', error);
-        return null;
-    }
+async function disconnect() {
+  if (client) {
+    await client.close();
+    client = null;
+    database = null;
+    console.log('[DB] Desconectado do MongoDB');
+  }
 }
 
+// Exportando todas as funções necessárias
 module.exports = {
-  COLLECTIONS,
-  connect,
-  getCollection,
-  find,
-  findOne: (collectionName, query) => find(collectionName, query, { findOne: true }),
-  updateOne,
-  ensureCollection,
-  initializeCollections,
-  getRegistroMembrosChannelId,
-  getErrosComando,
+    COLLECTIONS,
+    connect,
+    disconnect,
+    find,
+    updateOne,
+    getCollection,
+    ensureCollection,
+    initializeCollections,
+    isConnected
 };

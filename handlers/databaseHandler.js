@@ -1,33 +1,47 @@
-const { MongoClient } = require('mongodb');
 const path = require('path');
 const mongodb = require(path.resolve(__dirname, '../mongodb.js'));
 const boasVindasModule = require('../eventos/boas-vindas');
 
 class DatabaseHandler {
     constructor() {
-        this.mongoClient = new MongoClient(process.env.MONGO_URI);
+        this.isConnected = false;
     }
 
     async connect(botClient) {
         try {
-            await this.mongoClient.connect();
-            const db = this.mongoClient.db('ignis');
-            const ignis = { database: db, client: botClient };
+            console.log('[DB] Iniciando conexão com MongoDB...');
+            // Estabelece a conexão com o banco de dados
+            const database = await mongodb.connect(process.env.MONGO_URI);
+            this.isConnected = true;
             
-            global.ignisContext = ignis;
+            // Inicializa o Map de cooldowns
             global.cooldowns = new Map();
             
+            // Inicializa as coleções necessárias
             await mongodb.initializeCollections();
-            await boasVindasModule.initialize(botClient, ignis);
             
-            return ignis;
+            // Atualiza o contexto com o client do bot
+            if (global.ignisContext) {
+                global.ignisContext.client = botClient;
+            }
+            
+            // Inicializa o módulo de boas-vindas
+            await boasVindasModule.initialize(botClient, global.ignisContext);
+            
+            console.log('[DB] Conexão e inicialização concluídas com sucesso');
+            return global.ignisContext;
         } catch (error) {
+            console.error('[DB] Erro durante a conexão:', error);
             throw error;
         }
     }
 
     async disconnect() {
-        await this.mongoClient.close();
+        if (this.isConnected && mongodb.isConnected()) {
+            await mongodb.disconnect();
+            this.isConnected = false;
+            console.log('[DB] Conexão com MongoDB encerrada');
+        }
     }
 }
 
