@@ -93,7 +93,7 @@ class DatabaseService {
     }
     await this.initializeCollections(ignisContext);
     // Busca o documento do usuário na coleção NIVEIS
-    let userDoc = await database.findOne(database.COLLECTIONS.NIVEIS, { _id: userId });
+    let userDoc = await database.find(database.COLLECTIONS.NIVEIS, { _id: userId }, { findOne: true });
     if (userDoc) {
       let userData = normalizeUserData(userDoc);
       userData = await ensureUsername(userData, userId, ignisContext);
@@ -115,7 +115,7 @@ class DatabaseService {
   static async fetchConfiguracao(ignisContext) {
     try {
       await this.initializeCollections(ignisContext);
-      return await database.findOne(database.COLLECTIONS.CONFIGURACOES, { _id: 'canais' });
+      return await database.find(database.COLLECTIONS.CONFIGURACOES, { _id: 'canais' }, { findOne: true });
     } catch (e) {
       logError('fetchConfiguracao', e);
       return null;
