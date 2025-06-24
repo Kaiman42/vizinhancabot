@@ -40,8 +40,21 @@ module.exports = function setupRoleHandlers(client, configCollection) {
         if (oldRole.color !== newRole.color) {
             changes.push({ name: 'Cor do cargo', value: `De: #${oldRole.color.toString(16).padStart(6, '0')}\nPara: #${newRole.color.toString(16).padStart(6, '0')}` });
         }
+        // Rastrear permissões concedidas/removidas
         if (oldRole.permissions.bitfield !== newRole.permissions.bitfield) {
-            changes.push({ name: 'Permissões', value: `De: ${oldRole.permissions.toArray().join(', ') || 'Nenhuma'}\nPara: ${newRole.permissions.toArray().join(', ') || 'Nenhuma'}` });
+            const oldPerms = oldRole.permissions.toArray();
+            const newPerms = newRole.permissions.toArray();
+            const concedidas = newPerms.filter(p => !oldPerms.includes(p));
+            const removidas = oldPerms.filter(p => !newPerms.includes(p));
+            if (concedidas.length > 0) {
+                changes.push({ name: 'Permissões concedidas', value: concedidas.join(', ') });
+            }
+            if (removidas.length > 0) {
+                changes.push({ name: 'Permissões removidas', value: removidas.join(', ') });
+            }
+            if (concedidas.length === 0 && removidas.length === 0) {
+                changes.push({ name: 'Permissões', value: `De: ${oldPerms.join(', ') || 'Nenhuma'}\nPara: ${newPerms.join(', ') || 'Nenhuma'}` });
+            }
         }
         if (changes.length === 0) return;
         const embed = new EmbedBuilder()

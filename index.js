@@ -5,6 +5,7 @@ const CommandHandler = require('./handlers/commandHandler');
 const EventHandler = require('./handlers/eventHandler');
 const DatabaseHandler = require('./handlers/databaseHandler');
 const niveis = require('./eventos/niveis');
+const { handleAuditLogEntry } = require('./handlers/auditLogHandler');
 
 const botClient = new Client({ 
     intents: [
@@ -13,7 +14,10 @@ const botClient = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildMembers // Adicionado para eventos de entrada/saída de membros
+        GatewayIntentBits.GuildMembers, // Adicionado para eventos de entrada/saída de membros
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildMessageTyping,
+        GatewayIntentBits.GuildModeration // Inclui audit log events
     ],
     partials: [
         Partials.Message,
@@ -57,5 +61,7 @@ async function initializeBot() {
         }
     });
 }
+
+botClient.on('guildAuditLogEntryCreate', (entry) => handleAuditLogEntry(entry, botClient));
 
 initializeBot().catch(console.error);
